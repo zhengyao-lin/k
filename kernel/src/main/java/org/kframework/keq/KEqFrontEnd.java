@@ -28,6 +28,8 @@ import java.util.List;
 import java.util.function.Function;
 
 public class KEqFrontEnd extends FrontEnd {
+    public static KEqOptions globalKEqOptions;
+
     private final DefinitionScope scope;
     private final Provider<File> kompiledDir;
     private final Provider<File> kompiledDir1;
@@ -81,6 +83,7 @@ public class KEqFrontEnd extends FrontEnd {
         this.initializeRewriter = initializeRewriter;
         this.initializeRewriter1 = initializeRewriter1;
         this.initializeRewriter2 = initializeRewriter2;
+        globalKEqOptions = keqOptions;
     }
 
     @Override

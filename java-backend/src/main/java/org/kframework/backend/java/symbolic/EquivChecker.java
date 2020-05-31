@@ -4,16 +4,28 @@ package org.kframework.backend.java.symbolic;
 
 import org.kframework.backend.java.kil.ConstrainedTerm;
 import org.kframework.backend.java.util.FormulaContext;
+import org.kframework.definition.Module;
+import org.kframework.keq.KEqFrontEnd;
+import org.kframework.keq.KEqOptions;
+import org.kframework.kompile.CompiledDefinition;
+import org.kframework.kore.K;
+import org.kframework.unparser.ColorSetting;
+import org.kframework.unparser.OutputModes;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 /**
  * Created by daejunpark on 8/15/16.
  */
 public class EquivChecker {
+    public static void trace(String msg) {
+        if (KEqFrontEnd.globalKEqOptions.showTraces) System.out.println(msg);
+    }
+    public static void debug(String msg) { System.out.println(msg); }
 
     public static boolean equiv(
             java.util.List<ConstrainedTerm> startSyncNodes1,
@@ -28,7 +40,6 @@ public class EquivChecker {
             SymbolicRewriter rewriter1,
             SymbolicRewriter rewriter2
     ) {
-
         assert startEnsures.size() == targetEnsures.size();
         assert targetSyncNodes1.size() == targetEnsures.size();
         assert targetSyncNodes2.size() == targetEnsures.size();
@@ -60,6 +71,18 @@ public class EquivChecker {
 
         while (!currSyncNodes1.isEmpty() && !currSyncNodes2.isEmpty()) {
 
+            trace("################# Remaining unsync nodes in the LLVM side:");
+
+            for (SyncNode node : currSyncNodes1) {
+                trace("   - from sync point " + node.startSyncPoint + ": " + node.currSyncNode.toString());
+            }
+
+            trace("################# Remaining unsync nodes in the vx86 side:");
+
+            for (SyncNode node : currSyncNodes2) {
+                trace("   - from sync point " + node.startSyncPoint + ": " + node.currSyncNode.toString());
+            }
+
             java.util.List<Set<SyncNode>> nextSyncNodes1 = getNextSyncNodes(currSyncNodes1, targetSyncNodes1, rewriter1);
             java.util.List<Set<SyncNode>> nextSyncNodes2 = getNextSyncNodes(currSyncNodes2, targetSyncNodes2, rewriter2);
 
@@ -78,11 +101,13 @@ public class EquivChecker {
             for (int i = 0; i < numSyncPoints; i++) {
                 for (SyncNode node : allSyncNodes1.get(i)) {
                     if (node.mark == Mark.RED) {
+                        debug("[llvm] found a remaining state at sync point " + i);
                         currSyncNodes1.add(node);
                     }
                 }
                 for (SyncNode node : allSyncNodes2.get(i)) {
                     if (node.mark == Mark.RED) {
+                        debug("[x86] found a remaining state at sync point " + i);
                         currSyncNodes2.add(node);
                     }
                 }
@@ -129,29 +154,47 @@ public class EquivChecker {
         queue.add(initTerm);
 
         int steps = 0;
+
+        trace("rewriting starts from term: " + initTerm.toString());
+
         while (!queue.isEmpty()) {
             ++steps;
-            for (ConstrainedTerm curr : queue) {
 
+            debug("#################### step " + steps + ", width: " + queue.size());
+
+            for (ConstrainedTerm curr : queue) {
+                trace(">>> from term: " + curr.toString());
+
+                long begin = System.currentTimeMillis();
                 java.util.List<ConstrainedTerm> nexts = rewriter.fastComputeRewriteStep(curr, false, true, true, steps,
                         initTerm);
+                long elapsed = System.currentTimeMillis() - begin;
+                debug("rewriting took: " + elapsed + "ms");
 
                 if (nexts.isEmpty()) {
                     /* final term */
+                    debug("!!! no possible rewrites");
                     return null; // failed // TODO: output more information for failure
                 }
 
             loop:
                 for (ConstrainedTerm next : nexts) {
+                    trace("==> to term: " + next.toString());
+
+                    begin = System.currentTimeMillis();
+
                     for (int i = 0; i < numSyncPoints; i++) {
                         ConjunctiveFormula constraint = next.matchImplies(targetSyncNodes.get(i), true, false,
                                 new FormulaContext(FormulaContext.Kind.EquivImplication, null, next.termContext().global()), null);
                         if (constraint != null) {
                             SyncNode node = new SyncNode(currSyncNode.startSyncPoint, currSyncNode, next, constraint);
                             nextSyncNodes.get(i).add(node);
+                            debug("+++ term matched to sync point " + i + ", matching took " + (System.currentTimeMillis() - begin) + "ms");
                             continue loop;
                         }
                     }
+
+                    debug("!!! term not matched to any sync point, matching took " + (System.currentTimeMillis() - begin) + "ms");
                     nextQueue.add(next);
                 }
             }
@@ -180,19 +223,38 @@ public class EquivChecker {
         int numSyncPoints = targetEnsures.size();
 
         for (int i = 0; i < numSyncPoints; i++) {
+            debug("########################## matching nodes in sync point bucket " + i);
+
             for (SyncNode ct1 : syncNodes1.get(i)) {
                 for (SyncNode ct2 : syncNodes2.get(i)) {
                     if (ct1.startSyncPoint != ct2.startSyncPoint) continue;
                     if (ct1.mark == Mark.BLACK && ct2.mark == Mark.BLACK) continue;
+
+                    debug("??? do they match");
+                    trace("    - [llvm] " + ct1.currSyncNode.toString());
+                    trace("             constraint: " + ct1.constraint.toString());
+                    trace("    - [vx86] " + ct2.currSyncNode.toString());
+                    trace("             constraint: " + ct2.constraint.toString());
+                    trace("    - [vars] " + startEnsures.get(ct1.startSyncPoint).toString());
+                    trace("          => " + targetEnsures.get(i).toString());
+
+                    // starting constraints implies target constraints
                     ConjunctiveFormula c1 = ConjunctiveFormula.of(ct1.constraint);
                     ConjunctiveFormula c2 = ConjunctiveFormula.of(ct2.constraint);
                     ConjunctiveFormula c0 = ConjunctiveFormula.of(startEnsures.get(ct1.startSyncPoint));
                     ConjunctiveFormula e = ConjunctiveFormula.of(targetEnsures.get(i));
                     ConjunctiveFormula c = c1.add(c2).add(c0).simplify(); // TODO: termContext ??
+
                     if (!c.isFalse() && !c.checkUnsat(new FormulaContext(FormulaContext.Kind.EquivConstr, null, c.globalContext()))
                             && c.smartImplies(e) /* c.implies(e, Collections.emptySet()) */) {
+                        // these two synchronization nodes match
+                        // a synchronization point
                         ct1.mark = Mark.BLACK;
                         ct2.mark = Mark.BLACK;
+
+                        debug("    !!! YES");
+                    } else {
+                        debug("    !!! NO");
                     }
                 }
             }

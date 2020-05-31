@@ -300,13 +300,21 @@ public class InitializeRewriter implements Function<org.kframework.definition.De
                 targetEnsures.add(getConjunctiveFormula(state1.targetEnsures.get(i), state2.targetEnsures.get(i), rewritingContext));
             }
 
-            return EquivChecker.equiv(
-                    state1.startSyncNodes, state2.startSyncNodes,
-                    state1.targetSyncNodes, state2.targetSyncNodes,
-                    startEnsures, //info1.startEnsures, info2.startEnsures,
-                    targetEnsures, //info1.targetEnsures, info2.targetEnsures,
-                    state1.trusted, state2.trusted,
-                    state1.rewriter, state2.rewriter);
+            long begin = System.currentTimeMillis();
+
+            boolean result = EquivChecker.equiv(
+                state1.startSyncNodes, state2.startSyncNodes,
+                state1.targetSyncNodes, state2.targetSyncNodes,
+                startEnsures, //info1.startEnsures, info2.startEnsures,
+                targetEnsures, //info1.targetEnsures, info2.targetEnsures,
+                state1.trusted, state2.trusted,
+                state1.rewriter, state2.rewriter
+            );
+
+            long elapsed = System.currentTimeMillis() - begin;
+            System.out.println("!!! keq took " + elapsed + "ms");
+
+            return result;
         }
 
         private ConjunctiveFormula getConjunctiveFormula(ConjunctiveFormula e1, ConjunctiveFormula e2, GlobalContext global) {

@@ -61,10 +61,11 @@ public class Subsorts implements Serializable {
             } else if (bigSort == Sort.BOTTOM) {
                 return false;
             }
+
             if (subsort.containsRow(bigSort)) {
-                throw KEMException.criticalError("Sort " + smallSort.toString() + " is undefined.");
+                throw KEMException.criticalError("Sort " + smallSort.toString() + " is undefined (" + bigSort.toString() + " > " + smallSort.toString() + ").");
             } else {
-                throw KEMException.criticalError("Sort " + bigSort.toString() + " is undefined.");
+                throw KEMException.criticalError("Sort " + bigSort.toString() + " is undefined (" + bigSort.toString() + " > " + smallSort.toString() + ").");
             }
         }
         return isSubsorted;

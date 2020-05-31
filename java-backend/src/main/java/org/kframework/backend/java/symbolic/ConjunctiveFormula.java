@@ -892,6 +892,10 @@ public class ConjunctiveFormula extends Term implements CollectionInternalRepres
      */
     public boolean implies(ConjunctiveFormula rightHandSide, Set<Variable> existentialQuantVars, FormulaContext formulaContext) {
         // TODO(AndreiS): this can prove "stuff -> false", it needs fixing
+        if (rightHandSide.isFalse()) {
+            System.out.println("false rhs: " + rightHandSide.toStringMultiline());
+        }
+
         assert !rightHandSide.isFalse();
 
         LinkedList<Pair<ConjunctiveFormula, ConjunctiveFormula>> implications = new LinkedList<>();

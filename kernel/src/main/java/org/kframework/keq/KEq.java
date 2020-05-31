@@ -34,18 +34,59 @@ public class KEq {
             Function<Definition, Rewriter> commonGen,
             Function<Definition, Rewriter> gen1,
             Function<Definition, Rewriter> gen2) {
-        Rewriter commonRewriter = commonGen.apply(commonDef.kompiledDefinition);
+        System.out.println("keq starts");
 
-        Tuple2<Definition, Module> compiled1 = KProve.getProofDefinition(files.resolveWorkingDirectory(keqOptions.spec1), keqOptions.defModule1, keqOptions.specModule1, def1, backend, files, kem, sw);
-        Rewriter rewriter1 = gen1.apply(compiled1._1());
-        Module spec1 = compiled1._2();
+        Rewriter[] rewriters = new Rewriter[3];
+        Module[] specs = new Module[2];
 
-        Tuple2<Definition, Module> compiled2 = KProve.getProofDefinition(files.resolveWorkingDirectory(keqOptions.spec2), keqOptions.defModule2, keqOptions.specModule2, def2, backend, files, kem, sw);
-        Rewriter rewriter2 = gen2.apply(compiled2._1());
-        Module spec2 = compiled2._2();
+        Thread t0 = new Thread(() -> {
+            rewriters[2] = commonGen.apply(commonDef.kompiledDefinition);
+        });
 
-        boolean isEquivalent = commonRewriter.equivalence(rewriter1, rewriter2, spec1, spec2);
+        Thread t1 = new Thread(() -> {
+            Tuple2<Definition, Module> compiled1 = KProve.getProofDefinition(files.resolveWorkingDirectory(keqOptions.spec1), keqOptions.defModule1, keqOptions.specModule1, def1, backend, files, kem, sw);
+            rewriters[0] = gen1.apply(compiled1._1());
+            specs[0] = compiled1._2();
+        });
+
+        Thread t2 = new Thread(() -> {
+            Tuple2<Definition, Module> compiled2 = KProve.getProofDefinition(files.resolveWorkingDirectory(keqOptions.spec2), keqOptions.defModule2, keqOptions.specModule2, def2, backend, files, kem, sw);
+            rewriters[1] = gen2.apply(compiled2._1());
+            specs[1] = compiled2._2();
+        });
+
+        t0.start();
+        t1.start();
+        t2.start();
+
+        while (true) {
+            try {
+                t0.join();
+                break;
+            } catch (InterruptedException e) {
+            }
+        }
+
+        while (true) {
+            try {
+                t1.join();
+                break;
+            } catch (InterruptedException e) {
+            }
+        }
+
+        while (true) {
+            try {
+                t2.join();
+                break;
+            } catch (InterruptedException e) {
+            }
+        }
+
+        boolean isEquivalent = rewriters[2].equivalence(rewriters[0], rewriters[1], specs[0], specs[1]);
+
         System.out.println(isEquivalent ? "#True" : "#False");
+
         return isEquivalent ? 0 : 1;
     }
 }
