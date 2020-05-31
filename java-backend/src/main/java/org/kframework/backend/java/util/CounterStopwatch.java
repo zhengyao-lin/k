@@ -66,7 +66,7 @@ public class CounterStopwatch implements Comparable<CounterStopwatch> {
         if (level == 0) {
             duration += (System.nanoTime() - lastStartNano);
         } else if (level < 0) {
-            throw new AssertionError("Unable to stop timer: " + name + "\nTimer already stopped.");
+            // throw new AssertionError("Unable to stop timer: " + name + "\nTimer already stopped.");
         }
     }
 
@@ -83,7 +83,7 @@ public class CounterStopwatch implements Comparable<CounterStopwatch> {
             this.duration += lastDuration;
             return lastDuration;
         } else if (level < 0) {
-            throw new AssertionError("Unable to stop timer: " + name + "\nTimer already stopped.");
+            // throw new AssertionError("Unable to stop timer: " + name + "\nTimer already stopped.");
         }
         return 0;
     }

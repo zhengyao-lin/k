@@ -295,7 +295,7 @@ public class KItem extends Term implements KItemRepresentation {
     }
 
     public Term resolveFunctionAndAnywhere(TermContext context) {
-        profiler.resFuncNanoTimer.start();
+        // profiler.resFuncNanoTimer.start();
         Term result;
         try {
             if (global.javaExecutionOptions.cacheFunctions) {
@@ -314,7 +314,7 @@ public class KItem extends Term implements KItemRepresentation {
                 result = global.kItemOps.resolveFunctionAndAnywhere(this, context);
             }
         } finally {
-            profiler.resFuncNanoTimer.stop();
+            // profiler.resFuncNanoTimer.stop();
         }
         return result;
     }
@@ -429,11 +429,11 @@ public class KItem extends Term implements KItemRepresentation {
          * @return the evaluated result on success, or this {@code KItem} otherwise
          */
         private Term evaluateFunction(KItem kItem, TermContext context) {
-            kItem.profiler.evaluateFunctionNanoTimer.start();
+            // kItem.profiler.evaluateFunctionNanoTimer.start();
             KLabelConstant kLabelConstant = (KLabelConstant) kItem.kLabel;
-            Profiler.startTimer(Profiler.getTimerForFunction(kLabelConstant));
+            // Profiler.startTimer(Profiler.getTimerForFunction(kLabelConstant));
             int nestingLevel = kItem.profiler.evaluateFunctionNanoTimer.getLevel();
-            kItem.global.newLogIndent(KItemLog.indent(nestingLevel - 1));
+            // kItem.global.newLogIndent(KItemLog.indent(nestingLevel - 1));
 
             try {
                 KList kList = (KList) kItem.kList;
@@ -444,8 +444,8 @@ public class KItem extends Term implements KItemRepresentation {
                         Term result = builtins.get().invoke(context, kLabelConstant, arguments);
                         if (result != null && !result.equals(kItem)) {
                             Term evalResult = result.evaluate(context);
-                            KItemLog.logBuiltinEval(kLabelConstant, nestingLevel, kItem.global);
-                            kItem.profiler.evalFuncBuiltinCounter.increment();
+                            // KItemLog.logBuiltinEval(kLabelConstant, nestingLevel, kItem.global);
+                            // kItem.profiler.evalFuncBuiltinCounter.increment();
                             return evalResult;
                         }
                     } catch (ClassCastException e) {
@@ -477,7 +477,7 @@ public class KItem extends Term implements KItemRepresentation {
                 if (kLabelConstant.isSortPredicate() && kList.getContents().size() == 1) {
                     Term checkResult = SortMembership.check(kItem, definition);
                     if (checkResult != kItem) {
-                        kItem.profiler.evalFuncSortPredicateCounter.increment();
+                        // kItem.profiler.evalFuncSortPredicateCounter.increment();
                         return checkResult;
                     }
                 }
@@ -488,7 +488,7 @@ public class KItem extends Term implements KItemRepresentation {
                     Term result = null;
                     Term owiseResult = null;
                     Rule appliedRule = null;
-                    KItemLog.logStartingEval(kLabelConstant, nestingLevel, kItem.global, context);
+                    // KItemLog.logStartingEval(kLabelConstant, nestingLevel, kItem.global, context);
 
                     // an argument is concrete if it doesn't contain variables or unresolved functions
                     boolean isConcrete = kList.getContents().stream().filter(elem -> !elem.isGround() || !elem.isNormal()).collect(Collectors.toList()).isEmpty();
@@ -522,7 +522,7 @@ public class KItem extends Term implements KItemRepresentation {
                                 }
                                 solution = matches.get(0);
                             }
-                            KItemLog.logApplyingFuncRule(kLabelConstant, nestingLevel, rule, kItem.global);
+                            // KItemLog.logApplyingFuncRule(kLabelConstant, nestingLevel, rule, kItem.global);
 
                             /* rename fresh variables of the rule */
                             boolean hasFreshVars = false;
@@ -566,8 +566,8 @@ public class KItem extends Term implements KItemRepresentation {
                                 appliedRule = rule;
                             }
 
-                            KItemLog.logRuleApplied(kLabelConstant, nestingLevel, result != null, rule,
-                                    kItem.global);
+                            // KItemLog.logRuleApplied(kLabelConstant, nestingLevel, result != null, rule,
+                            //         kItem.global);
 
                             /*
                              * If the function definitions do not need to be deterministic, try them in order
@@ -600,23 +600,23 @@ public class KItem extends Term implements KItemRepresentation {
 
                     if (result != null) {
                         KItemLog.logEvaluated(kItem, result, nestingLevel);
-                        kItem.profiler.evalFuncRuleCounter.increment();
+                        // kItem.profiler.evalFuncRuleCounter.increment();
                         return result;
                     } else if (owiseResult != null && owiseApplicable(kItem, context, rulesForKLabel)) {
                         KItemLog.logEvaluatedOwise(kItem, owiseResult, nestingLevel);
-                        kItem.profiler.evalFuncOwiseCounter.increment();
+                        // kItem.profiler.evalFuncOwiseCounter.increment();
                         return owiseResult;
                     }
                     KItemLog.logNoRuleApplicable(kItem, nestingLevel);
-                    kItem.profiler.evalFuncNoRuleApplicableCounter.increment();
+                    // kItem.profiler.evalFuncNoRuleApplicableCounter.increment();
                 } else {
-                    kItem.profiler.evalFuncNoRuleCounter.increment();
+                    // kItem.profiler.evalFuncNoRuleCounter.increment();
                 }
                 return kItem;
             } finally {
-                kItem.global.restorePreviousLogIndent();
+                // kItem.global.restorePreviousLogIndent();
                 Profiler.stopTimer(Profiler.getTimerForFunction(kLabelConstant));
-                kItem.profiler.evaluateFunctionNanoTimer.stop();
+                // kItem.profiler.evaluateFunctionNanoTimer.stop();
             }
         }
 
@@ -696,7 +696,7 @@ public class KItem extends Term implements KItemRepresentation {
      * @return the result on success, or this {@code KItem} otherwise
      */
     private Term applyAnywhereRules(TermContext context) {
-        profiler.applyAnywhereRulesNanoTimer.start();
+        // profiler.applyAnywhereRulesNanoTimer.start();
         try {
             // apply a .K ~> K => K normalization
             if ((kLabel instanceof KLabelConstant) && KLabels.KSEQ.equals(kLabel)
@@ -704,12 +704,12 @@ public class KItem extends Term implements KItemRepresentation {
                     && (((KList) kList).get(0) instanceof KItem &&
                     KLabels.DOTK.equals(((KItem) ((KList) kList).get(0)).kLabel) ||
                     ((KList) kList).get(0).equals(KSequence.EMPTY))) {
-                profiler.applyAnywhereBuiltinCounter.increment();
+                // profiler.applyAnywhereBuiltinCounter.increment();
                 return ((KList) kList).get(1);
             }
 
             if (!isAnywhereApplicable(context)) {
-                profiler.applyAnywhereNoRuleCounter.increment();
+                // profiler.applyAnywhereNoRuleCounter.increment();
                 return this;
             }
 
@@ -743,7 +743,7 @@ public class KItem extends Term implements KItemRepresentation {
 
                     KItemLog.logAnywhereRule(kLabelConstant, profiler.applyAnywhereRulesNanoTimer.getLevel(),
                             rule, global);
-                    profiler.applyAnywhereRuleCounter.increment();
+                    // profiler.applyAnywhereRuleCounter.increment();
                     return rightHandSide;
                 } finally {
                     if (RuleAuditing.isAuditBegun()) {
@@ -757,10 +757,10 @@ public class KItem extends Term implements KItemRepresentation {
                     }
                 }
             }
-            profiler.applyAnywhereNoRuleApplicableCounter.increment();
+            // profiler.applyAnywhereNoRuleApplicableCounter.increment();
             return this;
         } finally {
-            profiler.applyAnywhereRulesNanoTimer.stop();
+            // profiler.applyAnywhereRulesNanoTimer.stop();
         }
     }
 

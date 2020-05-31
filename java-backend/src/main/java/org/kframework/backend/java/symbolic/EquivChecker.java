@@ -83,14 +83,45 @@ public class EquivChecker {
                 trace("   - from sync point " + node.startSyncPoint + ": " + node.currSyncNode.toString());
             }
 
-            java.util.List<Set<SyncNode>> nextSyncNodes1 = getNextSyncNodes(currSyncNodes1, targetSyncNodes1, rewriter1);
-            java.util.List<Set<SyncNode>> nextSyncNodes2 = getNextSyncNodes(currSyncNodes2, targetSyncNodes2, rewriter2);
+            AtomicReference<java.util.List<Set<SyncNode>>> syncNodes1 = new AtomicReference<java.util.List<Set<SyncNode>>>(null);
+            AtomicReference<java.util.List<Set<SyncNode>>> syncNodes2 = new AtomicReference<java.util.List<Set<SyncNode>>>(null);
+
+            Runnable f1 = () -> syncNodes1.set(getNextSyncNodes(currSyncNodes1, targetSyncNodes1, rewriter1));
+            Runnable f2 = () -> syncNodes2.set(getNextSyncNodes(currSyncNodes2, targetSyncNodes2, rewriter2));
+
+            if (KEqFrontEnd.globalKEqOptions.parallel) {
+                Thread t1 = new Thread(f1);
+                Thread t2 = new Thread(f2);
+
+                t1.start(); t2.start();
+
+                while (true) {
+                    try {
+                        t1.join();
+                        break;
+                    } catch (InterruptedException e) {
+                        debug("t1 interrupted " + e.toString());
+                    }
+                }
+
+                while (true) {
+                    try {
+                        t2.join();
+                        break;
+                    } catch (InterruptedException e) {
+                        debug("t2 interrupted " + e.toString());
+                    }
+                }
+            } else {
+                f1.run();
+                f2.run();
+            }
 
             // fail
-            if (nextSyncNodes1 == null || nextSyncNodes2 == null) return false; // TODO: output more information for failure
+            if (syncNodes1.get() == null || syncNodes2.get() == null) return false; // TODO: output more information for failure
 
-            allSyncNodes1 = mergeListOfSets(allSyncNodes1, nextSyncNodes1);
-            allSyncNodes2 = mergeListOfSets(allSyncNodes2, nextSyncNodes2);
+            allSyncNodes1 = mergeListOfSets(allSyncNodes1, syncNodes1.get());
+            allSyncNodes2 = mergeListOfSets(allSyncNodes2, syncNodes2.get());
 
             matchSyncNodes(allSyncNodes1, allSyncNodes2, startEnsures, targetEnsures);
             validateSyncNodes(allSyncNodes1);
