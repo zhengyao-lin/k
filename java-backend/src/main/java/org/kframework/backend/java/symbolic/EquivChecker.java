@@ -3,6 +3,7 @@
 package org.kframework.backend.java.symbolic;
 
 import org.kframework.backend.java.kil.ConstrainedTerm;
+import org.kframework.backend.java.kil.GlobalContext;
 import org.kframework.backend.java.util.FormulaContext;
 import org.kframework.definition.Module;
 import org.kframework.keq.KEqFrontEnd;
@@ -15,6 +16,8 @@ import org.kframework.unparser.OutputModes;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
@@ -26,6 +29,12 @@ public class EquivChecker {
         if (KEqFrontEnd.globalKEqOptions.showTraces) System.out.println(msg);
     }
     public static void debug(String msg) { System.out.println(msg); }
+
+    private static long accumulatedZ3Time = 0;
+
+    public static synchronized void addAccumulatedZ3Time(long ms) {
+        accumulatedZ3Time += ms;
+    }
 
     public static boolean equiv(
             java.util.List<ConstrainedTerm> startSyncNodes1,
@@ -43,6 +52,7 @@ public class EquivChecker {
         assert startEnsures.size() == targetEnsures.size();
         assert targetSyncNodes1.size() == targetEnsures.size();
         assert targetSyncNodes2.size() == targetEnsures.size();
+        assert KEqFrontEnd.globalKEqOptions.parallel >= 1;
 
         int numSyncPoints = targetEnsures.size();
 
@@ -86,10 +96,23 @@ public class EquivChecker {
             AtomicReference<java.util.List<Set<SyncNode>>> syncNodes1 = new AtomicReference<java.util.List<Set<SyncNode>>>(null);
             AtomicReference<java.util.List<Set<SyncNode>>> syncNodes2 = new AtomicReference<java.util.List<Set<SyncNode>>>(null);
 
-            Runnable f1 = () -> syncNodes1.set(getNextSyncNodes(currSyncNodes1, targetSyncNodes1, rewriter1));
-            Runnable f2 = () -> syncNodes2.set(getNextSyncNodes(currSyncNodes2, targetSyncNodes2, rewriter2));
+            AtomicLong symExecTime1 = new AtomicLong(0);
+            AtomicLong symExecTime2 = new AtomicLong(0);
 
-            if (KEqFrontEnd.globalKEqOptions.parallel) {
+            final long begin = System.currentTimeMillis();
+            accumulatedZ3Time = 0;
+
+            Runnable f1 = () -> {
+                syncNodes1.set(getNextSyncNodes(currSyncNodes1, targetSyncNodes1, rewriter1));
+                symExecTime1.set(System.currentTimeMillis() - begin);
+            };
+
+            Runnable f2 = () -> {
+                syncNodes2.set(getNextSyncNodes(currSyncNodes2, targetSyncNodes2, rewriter2));
+                symExecTime2.set(System.currentTimeMillis() - begin);
+            };
+
+            if (KEqFrontEnd.globalKEqOptions.parallel > 1) {
                 Thread t1 = new Thread(f1);
                 Thread t2 = new Thread(f2);
 
@@ -117,8 +140,19 @@ public class EquivChecker {
                 f2.run();
             }
 
+            long elapsed = System.currentTimeMillis() - begin;
+
+            debug("### end of one round of symbolic execution:");
+            debug("  - symbolic execution total: " + (((double)elapsed) / 1000.0) + "s");
+            debug("  - symbolic execution 1 total: " + (((double)symExecTime1.get()) / 1000.0) + "s");
+            debug("  - symbolic execution 2 total: " + (((double)symExecTime2.get()) / 1000.0) + "s");
+            debug("  - z3 total query time in symbolic execution: " + (((double)accumulatedZ3Time) / 1000.0) + "s");
+
             // fail
             if (syncNodes1.get() == null || syncNodes2.get() == null) return false; // TODO: output more information for failure
+
+            long matchingBegin = System.currentTimeMillis();
+            accumulatedZ3Time = 0;
 
             allSyncNodes1 = mergeListOfSets(allSyncNodes1, syncNodes1.get());
             allSyncNodes2 = mergeListOfSets(allSyncNodes2, syncNodes2.get());
@@ -126,6 +160,12 @@ public class EquivChecker {
             matchSyncNodes(allSyncNodes1, allSyncNodes2, startEnsures, targetEnsures);
             validateSyncNodes(allSyncNodes1);
             validateSyncNodes(allSyncNodes2);
+
+            elapsed = System.currentTimeMillis() - matchingBegin;
+
+            debug("### end of matching:");
+            debug("  - matching total: " + (((double)elapsed) / 1000.0) + "s");
+            debug("  - z3 total query time: " + (((double)accumulatedZ3Time) / 1000.0) + "s");
 
             currSyncNodes1.clear();
             currSyncNodes2.clear();
@@ -276,8 +316,12 @@ public class EquivChecker {
                     ConjunctiveFormula e = ConjunctiveFormula.of(targetEnsures.get(i));
                     ConjunctiveFormula c = c1.add(c2).add(c0).simplify(); // TODO: termContext ??
 
-                    if (!c.isFalse() && !c.checkUnsat(new FormulaContext(FormulaContext.Kind.EquivConstr, null, c.globalContext()))
-                            && c.smartImplies(e) /* c.implies(e, Collections.emptySet()) */) {
+                    Boolean check1 = null;
+                    Boolean check2 = null;
+                    Boolean check3 = null;
+
+                    if (!(check1 = c.isFalse()) && !(check2 = c.checkUnsat(new FormulaContext(FormulaContext.Kind.EquivConstr, null, c.globalContext())))
+                            && (check3 = c.smartImplies(e))) {
                         // these two synchronization nodes match
                         // a synchronization point
                         ct1.mark = Mark.BLACK;
@@ -286,6 +330,12 @@ public class EquivChecker {
                         debug("    !!! YES");
                     } else {
                         debug("    !!! NO");
+                        trace("    c (unsat: " + check1 + ") = " + c.toStringMultiline());
+                        trace("    ####################");
+                        trace("    e = " + e.toStringMultiline());
+                        trace("    ####################");
+                        trace("    c in smt (unsat: " + check2 + ") = " + KILtoSMTLib.translateConstraint(c).toString());
+                        trace("    ####################");
                     }
                 }
             }

@@ -4,6 +4,7 @@ package org.kframework.backend.java.util;
 import com.google.common.collect.ImmutableSet;
 import org.apache.commons.io.IOUtils;
 import org.kframework.backend.java.kil.GlobalContext;
+import org.kframework.backend.java.symbolic.EquivChecker;
 import org.kframework.backend.java.symbolic.JavaExecutionOptions;
 import org.kframework.backend.java.z3.Z3Context;
 import org.kframework.backend.java.z3.Z3Exception;
@@ -94,6 +95,7 @@ public class Z3Wrapper {
     private boolean checkQueryWithExternalProcess(CharSequence query, int timeout, Z3Profiler profiler) {
         String result;
         profiler.startQuery();
+        long begin = System.currentTimeMillis();
         try {
             ProcessBuilder pb = files.getProcessBuilder().command(
                     OS.current().getNativeExecutable("z3"),
@@ -123,6 +125,8 @@ public class Z3Wrapper {
                 //In case of timeout, result is "unknown", so evaluation can proceed.
                 global.log().format("\nZ3 likely timeout\n");
             }
+
+            EquivChecker.addAccumulatedZ3Time(System.currentTimeMillis() - begin);
         }
         stateLog.log(StateLog.LogEvent.Z3RESULT, KToken(result, Sorts.Z3Result()));
         if (!Z3_QUERY_RESULTS.contains(result)) {

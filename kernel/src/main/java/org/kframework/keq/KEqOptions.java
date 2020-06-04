@@ -58,8 +58,8 @@ public final class KEqOptions {
     @Parameter(names={"--show-traces"}, description="Show traces of symbolic rewriting")
     public boolean showTraces;
 
-    @Parameter(names={"--parallel"}, description="Enable parallel rewriting")
-    public boolean parallel;
+    @Parameter(names={"--parallel"}, description="Number of parallel jobs (min 1)")
+    public int parallel = 1;
 
 //    @Parameter(names = "--boundary-cells1", description = "The comma-separated list of cells used to mark the boundary " +
 //            "of evaluation. If option is specified, execution ends when these cells in the current term match same " +
