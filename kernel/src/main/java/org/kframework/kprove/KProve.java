@@ -9,6 +9,9 @@ import org.kframework.compile.Backend;
 import org.kframework.definition.Definition;
 import org.kframework.definition.Module;
 import org.kframework.definition.Rule;
+import org.kframework.keq.KEq;
+import org.kframework.keq.KEqFrontEnd;
+import org.kframework.keq.KEqOptions;
 import org.kframework.kompile.CompiledDefinition;
 import org.kframework.kompile.Kompile;
 import org.kframework.krun.KRun;
@@ -80,7 +83,13 @@ public class KProve {
     });
 
     public static Tuple2<Definition, Module> getProofDefinition(File proofFile, String defModuleName, String specModuleName, CompiledDefinition compiledDefinition, Backend backend, FileUtil files, KExceptionManager kem, Stopwatch sw) {
-        Kompile kompile = new Kompile(compiledDefinition.kompileOptions, files, kem, sw, true);
+        System.out.println("parsing proof file: " + proofFile.getAbsolutePath());
+
+        if (KEqFrontEnd.globalKEqOptions.noParseCache) {
+            System.out.println("disable parser cache");
+        }
+
+        Kompile kompile = new Kompile(compiledDefinition.kompileOptions, files, kem, sw, !KEqFrontEnd.globalKEqOptions.noParseCache);
 
         if (defModuleName == null) {
             defModuleName = compiledDefinition.kompiledDefinition.mainModule().name();
@@ -88,7 +97,14 @@ public class KProve {
         if (specModuleName == null) {
             specModuleName = FilenameUtils.getBaseName(proofFile.getName()).toUpperCase();
         }
+
+        long begin = System.currentTimeMillis();
+
         java.util.Set<Module> modules = kompile.parseModules(compiledDefinition, defModuleName, files.resolveWorkingDirectory(proofFile).getAbsoluteFile());
+
+        long elapsed = System.currentTimeMillis() - begin;
+        System.out.println("modules parsed: " + proofFile.getAbsolutePath() +
+                            " in " + ((double)elapsed / 1000) + "s");
 
         Map<String, Module> modulesMap = new HashMap<>();
         modules.forEach(m -> modulesMap.put(m.name(), m));

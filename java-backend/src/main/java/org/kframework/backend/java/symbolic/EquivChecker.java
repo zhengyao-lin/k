@@ -54,6 +54,9 @@ public class EquivChecker {
         assert targetSyncNodes2.size() == targetEnsures.size();
         assert KEqFrontEnd.globalKEqOptions.parallel >= 1;
 
+        // do a full gc here
+        Runtime.getRuntime().gc();
+
         int numSyncPoints = targetEnsures.size();
 
         java.util.List<Set<SyncNode>> allSyncNodes1 = newListOfSets(numSyncPoints);
@@ -103,13 +106,15 @@ public class EquivChecker {
             accumulatedZ3Time = 0;
 
             Runnable f1 = () -> {
+                long begin1 = System.currentTimeMillis();
                 syncNodes1.set(getNextSyncNodes(currSyncNodes1, targetSyncNodes1, rewriter1));
-                symExecTime1.set(System.currentTimeMillis() - begin);
+                symExecTime1.set(System.currentTimeMillis() - begin1);
             };
 
             Runnable f2 = () -> {
+                long begin2 = System.currentTimeMillis();
                 syncNodes2.set(getNextSyncNodes(currSyncNodes2, targetSyncNodes2, rewriter2));
-                symExecTime2.set(System.currentTimeMillis() - begin);
+                symExecTime2.set(System.currentTimeMillis() - begin2);
             };
 
             if (KEqFrontEnd.globalKEqOptions.parallel > 1) {

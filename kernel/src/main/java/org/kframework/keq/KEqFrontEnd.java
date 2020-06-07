@@ -25,6 +25,11 @@ import org.kframework.utils.inject.Spec2;
 
 import java.io.File;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 
 public class KEqFrontEnd extends FrontEnd {
@@ -86,11 +91,44 @@ public class KEqFrontEnd extends FrontEnd {
         globalKEqOptions = keqOptions;
     }
 
+    private static void memoryMonitor(Lock memStopLock) {
+        // maximum usage (non-free)
+        Runtime runtime = Runtime.getRuntime();
+        long max = runtime.totalMemory() - runtime.freeMemory();
+
+        while (true) {
+            long total = runtime.totalMemory();
+            long free = runtime.freeMemory();
+            long limit = runtime.maxMemory();
+
+            if (total - free > max) {
+                max = total - free;
+            }
+
+            System.err.println("%%% memory usage (in bytes): " + (total - free) + "/" + total +
+                                ", limit: " + limit +
+                                ", max: " + max);
+
+            try {
+                if (memStopLock.tryLock(globalKEqOptions.memMonitorInterval, TimeUnit.MILLISECONDS)) {
+                    return;
+                }
+            } catch (Exception e) {
+            }
+        }
+    }
+
     @Override
     protected int run() {
         CompiledDefinition commonDef, def1, def2;
         Function<Definition, Rewriter> commonRewriter, rewriter1, rewriter2;
         Backend backend;
+
+        ReentrantLock memStopLock = new ReentrantLock();
+        memStopLock.lock();
+        Thread memThread = new Thread(() -> memoryMonitor(memStopLock));
+        memThread.start();
+
         scope.enter(kompiledDir.get());
         try {
             commonDef = compiledDef.get();
@@ -113,10 +151,22 @@ public class KEqFrontEnd extends FrontEnd {
         } finally {
             scope.exit();
         }
-        return new KEq(kem, files.get(), sw).run(commonDef, def1, def2,
+
+        int result = new KEq(kem, files.get(), sw).run(commonDef, def1, def2,
                 keqOptions,
                 backend,
                 commonRewriter, rewriter1, rewriter2);
+
+        memStopLock.unlock();
+        while (true) {
+            try {
+                memThread.join();
+                break;
+            } catch (Exception e) {
+            }
+        }
+
+        return result;
     }
 
     public static List<Module> getDefinitionSpecificModules() {

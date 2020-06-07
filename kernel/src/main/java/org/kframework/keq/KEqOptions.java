@@ -61,6 +61,12 @@ public final class KEqOptions {
     @Parameter(names={"--parallel"}, description="Number of parallel jobs (min 1)")
     public int parallel = 1;
 
+    @Parameter(names={"--mem-monitor-interval"}, description="Interval for memory monitor in milliseconds")
+    public long memMonitorInterval = 2000;
+
+    @Parameter(names={"--no-parser-cache"}, description="Do not cache parsing result")
+    public boolean noParseCache;
+
 //    @Parameter(names = "--boundary-cells1", description = "The comma-separated list of cells used to mark the boundary " +
 //            "of evaluation. If option is specified, execution ends when these cells in the current term match same " +
 //            "cells in the target term. (Except for step 1, for which boundary checking is disabled.)" +
