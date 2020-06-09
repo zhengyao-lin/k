@@ -242,6 +242,8 @@ public class EquivChecker {
                 trace(">>> from term: " + curr.toString());
 
                 long begin = System.currentTimeMillis();
+                // temporary fix for get_block_head_tail
+                curr.termContext().setTopTerm(curr.term());
                 java.util.List<ConstrainedTerm> nexts = rewriter.fastComputeRewriteStep(curr, false, true, true, steps,
                         initTerm);
                 long elapsed = System.currentTimeMillis() - begin;
