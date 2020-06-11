@@ -946,8 +946,8 @@ public class ConjunctiveFormula extends Term implements CollectionInternalRepres
                 if (global.javaExecutionOptions.debugFormulas) {
                     global.log().format("Failure!\n");
                 }
-                EquivChecker.trace("z3 implication falied:");
-                EquivChecker.trace(KILtoSMTLib.translateImplication(leftWithoutSubst, right, existentialQuantVars).toString());
+                EquivChecker.smt("z3 implication falied:");
+                EquivChecker.smt(KILtoSMTLib.translateImplication(leftWithoutSubst, right, existentialQuantVars).toString());
                 return false;
             } else {
                 if (global.javaExecutionOptions.debugFormulas) {

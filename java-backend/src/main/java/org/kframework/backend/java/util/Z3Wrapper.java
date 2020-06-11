@@ -124,6 +124,8 @@ public class Z3Wrapper {
             if (javaExecutionOptions.debugZ3 && profiler.isLastRunTimeout()) {
                 //In case of timeout, result is "unknown", so evaluation can proceed.
                 global.log().format("\nZ3 likely timeout\n");
+                EquivChecker.trace("smt query likely timed out:");
+                EquivChecker.trace(query.toString());
             }
 
             EquivChecker.addAccumulatedZ3Time(System.currentTimeMillis() - begin);

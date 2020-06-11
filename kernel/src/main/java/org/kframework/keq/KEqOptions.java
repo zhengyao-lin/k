@@ -58,6 +58,9 @@ public final class KEqOptions {
     @Parameter(names={"--show-traces"}, description="Show traces of symbolic rewriting")
     public boolean showTraces;
 
+    @Parameter(names={"--show-smt"}, description="Show detailed SMT log")
+    public boolean showSMT;
+
     @Parameter(names={"--parallel"}, description="Number of parallel jobs (min 1)")
     public int parallel = 1;
 

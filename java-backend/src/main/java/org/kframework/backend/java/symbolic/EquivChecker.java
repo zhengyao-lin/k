@@ -28,6 +28,7 @@ public class EquivChecker {
     public static void trace(String msg) {
         if (KEqFrontEnd.globalKEqOptions.showTraces) System.out.println(msg);
     }
+    public static void smt(String msg) { if (KEqFrontEnd.globalKEqOptions.showSMT) System.out.println(msg); }
     public static void debug(String msg) { System.out.println(msg); }
 
     private static long accumulatedZ3Time = 0;
@@ -178,12 +179,14 @@ public class EquivChecker {
                 for (SyncNode node : allSyncNodes1.get(i)) {
                     if (node.mark == Mark.RED) {
                         debug("[llvm] found a remaining state at sync point " + i);
+                        trace(" - constrained term: " + node.currSyncNode.toString());
                         currSyncNodes1.add(node);
                     }
                 }
                 for (SyncNode node : allSyncNodes2.get(i)) {
                     if (node.mark == Mark.RED) {
                         debug("[x86] found a remaining state at sync point " + i);
+                        trace(" - constrained term: " + node.currSyncNode.toString());
                         currSyncNodes2.add(node);
                     }
                 }
@@ -301,7 +304,8 @@ public class EquivChecker {
         int numSyncPoints = targetEnsures.size();
 
         for (int i = 0; i < numSyncPoints; i++) {
-            debug("########################## matching nodes in sync point bucket " + i);
+            debug("########################## matching nodes in sync point bucket " + i +
+                    " with (" + syncNodes1.get(i).size() + ", " + syncNodes2.get(i).size() + ")");
 
             for (SyncNode ct1 : syncNodes1.get(i)) {
                 for (SyncNode ct2 : syncNodes2.get(i)) {
@@ -337,12 +341,12 @@ public class EquivChecker {
                         debug("    !!! YES");
                     } else {
                         debug("    !!! NO");
-                        trace("    c (unsat: " + check1 + ") = " + c.toStringMultiline());
-                        trace("    ####################");
-                        trace("    e = " + e.toStringMultiline());
-                        trace("    ####################");
-                        trace("    c in smt (unsat: " + check2 + ") = " + KILtoSMTLib.translateConstraint(c).toString());
-                        trace("    ####################");
+                        smt("    c (unsat: " + check1 + ") = " + c.toStringMultiline());
+                        smt("    ####################");
+                        smt("    e = " + e.toStringMultiline());
+                        smt("    ####################");
+                        smt("    c in smt (unsat: " + check2 + ") = " + KILtoSMTLib.translateConstraint(c).toString());
+                        smt("    ####################");
                     }
                 }
             }
