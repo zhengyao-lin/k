@@ -12,9 +12,17 @@ import org.kframework.kompile.CompiledDefinition;
 import org.kframework.kore.K;
 import org.kframework.unparser.ColorSetting;
 import org.kframework.unparser.OutputModes;
+import scala.Tuple2;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -30,6 +38,39 @@ public class EquivChecker {
     }
     public static void smt(String msg) { if (KEqFrontEnd.globalKEqOptions.showSMT) System.out.println(msg); }
     public static void debug(String msg) { System.out.println(msg); }
+
+    static int query_counter = 0;
+    static File current_query_dir = null;
+
+    public synchronized static void saveZ3Result(String query, String result, long time) {
+        if (KEqFrontEnd.globalKEqOptions.z3QueryLogDir != null) {
+            try {
+                if (current_query_dir == null) {
+                    File dir = new File(KEqFrontEnd.globalKEqOptions.z3QueryLogDir);
+                    if (!dir.exists()) {
+                        dir.mkdir();
+                    }
+
+                    Path path = Files.createTempDirectory(Paths.get(dir.getPath()), "z3-query-");
+                    current_query_dir = path.toFile();
+
+                    System.out.println("storing z3 queries to " + current_query_dir.getAbsolutePath());
+                }
+
+                File log = new File(current_query_dir, "q-" + query_counter + ".smt");
+                log.createNewFile();
+
+                FileWriter writer = new FileWriter(log);
+                writer.write(query + "\n\n(check-sat)\n");
+                writer.write("; " + result + ", took " + time + "ms\n");
+                writer.close();
+
+                query_counter += 1;
+            } catch (IOException exc) {
+                System.err.println(exc.toString());
+            }
+        }
+    }
 
     private static long accumulatedZ3Time = 0;
 
@@ -291,6 +332,71 @@ public class EquivChecker {
         return nextSyncNodes;
     }
 
+    public static boolean matchSyncNode(
+            int i,
+            SyncNode ct1,
+            SyncNode ct2,
+            java.util.List<ConjunctiveFormula> startEnsures,
+            java.util.List<ConjunctiveFormula> targetEnsures) {
+        debug("??? do they match");
+        trace("    - [llvm] " + ct1.currSyncNode.toString());
+        trace("             constraint: " + ct1.constraint.toString());
+        trace("    - [vx86] " + ct2.currSyncNode.toString());
+        trace("             constraint: " + ct2.constraint.toString());
+        trace("    - [vars] " + startEnsures.get(ct1.startSyncPoint).toString());
+        trace("          => " + targetEnsures.get(i).toString());
+
+        // starting constraints implies target constraints
+        ConjunctiveFormula c1 = ConjunctiveFormula.of(ct1.constraint);
+        ConjunctiveFormula c2 = ConjunctiveFormula.of(ct2.constraint);
+        ConjunctiveFormula c0 = ConjunctiveFormula.of(startEnsures.get(ct1.startSyncPoint));
+        ConjunctiveFormula e = ConjunctiveFormula.of(targetEnsures.get(i));
+        ConjunctiveFormula c = c1.add(c2).add(c0).simplify(); // TODO: termContext ??
+
+        Boolean check1 = null;
+        Boolean check2 = null;
+        Boolean check3 = null;
+
+        if (!(check1 = c.isFalse()) && !(check2 = c.checkUnsat(new FormulaContext(FormulaContext.Kind.EquivConstr, null, c.globalContext())))
+                && (check3 = c.smartImplies(e))) {
+            // these two synchronization nodes match
+            // a synchronization point
+            ct1.mark = Mark.BLACK;
+            ct2.mark = Mark.BLACK;
+
+            debug("    !!! YES");
+            return true;
+        } else {
+            debug("    !!! NO");
+            smt("    c (unsat: " + check1 + ") = " + c.toStringMultiline());
+            smt("    ####################");
+            smt("    e = " + e.toStringMultiline());
+            smt("    ####################");
+            smt("    c in smt (unsat: " + check2 + ") = " + KILtoSMTLib.translateConstraint(c).toString());
+            smt("    ####################");
+            return false;
+        }
+    }
+
+    public static boolean isAllMatched(
+            int i,
+            java.util.List<Set<SyncNode>> syncNodes1,
+            java.util.List<Set<SyncNode>> syncNodes2) {
+        for (SyncNode ct1 : syncNodes1.get(i)) {
+            if (ct1.mark != Mark.BLACK) {
+                return false;
+            }
+        }
+
+        for (SyncNode ct2 : syncNodes2.get(i)) {
+            if (ct2.mark != Mark.BLACK) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public static void matchSyncNodes(
             java.util.List<Set<SyncNode>> syncNodes1,
             java.util.List<Set<SyncNode>> syncNodes2,
@@ -307,47 +413,36 @@ public class EquivChecker {
             debug("########################## matching nodes in sync point bucket " + i +
                     " with (" + syncNodes1.get(i).size() + ", " + syncNodes2.get(i).size() + ")");
 
-            for (SyncNode ct1 : syncNodes1.get(i)) {
+            List<SyncNode> remaining1 = new ArrayList<SyncNode>();
+            List<SyncNode> remaining2 = new ArrayList<SyncNode>();
+
+            outer: for (SyncNode ct1 : syncNodes1.get(i)) {
                 for (SyncNode ct2 : syncNodes2.get(i)) {
                     if (ct1.startSyncPoint != ct2.startSyncPoint) continue;
                     if (ct1.mark == Mark.BLACK && ct2.mark == Mark.BLACK) continue;
 
-                    debug("??? do they match");
-                    trace("    - [llvm] " + ct1.currSyncNode.toString());
-                    trace("             constraint: " + ct1.constraint.toString());
-                    trace("    - [vx86] " + ct2.currSyncNode.toString());
-                    trace("             constraint: " + ct2.constraint.toString());
-                    trace("    - [vars] " + startEnsures.get(ct1.startSyncPoint).toString());
-                    trace("          => " + targetEnsures.get(i).toString());
-
-                    // starting constraints implies target constraints
-                    ConjunctiveFormula c1 = ConjunctiveFormula.of(ct1.constraint);
-                    ConjunctiveFormula c2 = ConjunctiveFormula.of(ct2.constraint);
-                    ConjunctiveFormula c0 = ConjunctiveFormula.of(startEnsures.get(ct1.startSyncPoint));
-                    ConjunctiveFormula e = ConjunctiveFormula.of(targetEnsures.get(i));
-                    ConjunctiveFormula c = c1.add(c2).add(c0).simplify(); // TODO: termContext ??
-
-                    Boolean check1 = null;
-                    Boolean check2 = null;
-                    Boolean check3 = null;
-
-                    if (!(check1 = c.isFalse()) && !(check2 = c.checkUnsat(new FormulaContext(FormulaContext.Kind.EquivConstr, null, c.globalContext())))
-                            && (check3 = c.smartImplies(e))) {
-                        // these two synchronization nodes match
-                        // a synchronization point
-                        ct1.mark = Mark.BLACK;
-                        ct2.mark = Mark.BLACK;
-
-                        debug("    !!! YES");
-                    } else {
-                        debug("    !!! NO");
-                        smt("    c (unsat: " + check1 + ") = " + c.toStringMultiline());
-                        smt("    ####################");
-                        smt("    e = " + e.toStringMultiline());
-                        smt("    ####################");
-                        smt("    c in smt (unsat: " + check2 + ") = " + KILtoSMTLib.translateConstraint(c).toString());
-                        smt("    ####################");
+                    // since it's less likely for two sync nodes to match
+                    // one at this point, this is just a heuristic to reduce
+                    // the number of z3 queries required
+                    if (ct1.mark == Mark.BLACK || ct2.mark == Mark.BLACK) {
+                        remaining1.add(ct1);
+                        remaining2.add(ct2);
+                        continue;
                     }
+
+                    boolean matched = matchSyncNode(i, ct1, ct2, startEnsures, targetEnsures);
+
+                    if (matched && isAllMatched(i, syncNodes1, syncNodes2)) {
+                        // if matching status changed and all have been matched
+                        // break the loop now
+                        break outer;
+                    }
+                }
+            }
+
+            if (!isAllMatched(i, syncNodes1, syncNodes2)) {
+                for (int j = 0; j < remaining1.size(); j++) {
+                    matchSyncNode(i, remaining1.get(j), remaining2.get(j), startEnsures, targetEnsures);
                 }
             }
         }

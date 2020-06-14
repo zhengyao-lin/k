@@ -152,21 +152,22 @@ public class KEqFrontEnd extends FrontEnd {
             scope.exit();
         }
 
-        int result = new KEq(kem, files.get(), sw).run(commonDef, def1, def2,
-                keqOptions,
-                backend,
-                commonRewriter, rewriter1, rewriter2);
-
-        memStopLock.unlock();
-        while (true) {
-            try {
-                memThread.join();
-                break;
-            } catch (Exception e) {
+        try {
+            int result = new KEq(kem, files.get(), sw).run(commonDef, def1, def2,
+                    keqOptions,
+                    backend,
+                    commonRewriter, rewriter1, rewriter2);
+            return result;
+        } finally {
+            memStopLock.unlock();
+            while (true) {
+                try {
+                    memThread.join();
+                    break;
+                } catch (Exception e) {
+                }
             }
         }
-
-        return result;
     }
 
     public static List<Module> getDefinitionSpecificModules() {

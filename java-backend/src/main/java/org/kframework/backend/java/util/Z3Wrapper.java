@@ -93,7 +93,7 @@ public class Z3Wrapper {
      * @return true if query result is unsat, false otherwise.
      */
     private boolean checkQueryWithExternalProcess(CharSequence query, int timeout, Z3Profiler profiler) {
-        String result;
+        String result = "";
         profiler.startQuery();
         long begin = System.currentTimeMillis();
         try {
@@ -128,7 +128,9 @@ public class Z3Wrapper {
                 EquivChecker.trace(query.toString());
             }
 
-            EquivChecker.addAccumulatedZ3Time(System.currentTimeMillis() - begin);
+            long elapsed = System.currentTimeMillis() - begin;
+            EquivChecker.addAccumulatedZ3Time(elapsed);
+            EquivChecker.saveZ3Result(query.toString(), result, elapsed);
         }
         stateLog.log(StateLog.LogEvent.Z3RESULT, KToken(result, Sorts.Z3Result()));
         if (!Z3_QUERY_RESULTS.contains(result)) {
