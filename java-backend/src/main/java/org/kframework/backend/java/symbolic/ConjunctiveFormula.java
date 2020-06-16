@@ -855,6 +855,15 @@ public class ConjunctiveFormula extends Term implements CollectionInternalRepres
                 .collect(Collectors.toList()), global);
     }
 
+    public boolean checkUnsatWithTimeout(FormulaContext formulaContext, int timeout) {
+        formulaContext.z3Profiler.newRequest();
+        boolean unsat = global.constraintOps.checkUnsatWithTimeout(this, formulaContext, timeout);
+        if (global.javaExecutionOptions.debugZ3) {
+            formulaContext.printUnsat(this, unsat, false);
+        }
+        return unsat;
+    }
+
     public boolean checkUnsat(FormulaContext formulaContext) {
         formulaContext.z3Profiler.newRequest();
         boolean unsat = global.constraintOps.checkUnsat(this, formulaContext);

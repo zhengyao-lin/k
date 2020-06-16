@@ -16,7 +16,7 @@ import java.util.Set;
 
 public class SMTOperations {
 
-    private final SMTOptions        smtOptions;
+    public final SMTOptions        smtOptions;
     private final Z3Wrapper         z3;
     private final JavaExecutionOptions javaExecutionOptions;
     private final KExceptionManager kem;
@@ -33,7 +33,7 @@ public class SMTOperations {
         this.javaExecutionOptions = javaExecutionOptions;
     }
 
-    public boolean checkUnsat(ConjunctiveFormula constraint, FormulaContext formulaContext) {
+    public boolean checkUnsatWithTimeout(ConjunctiveFormula constraint, FormulaContext formulaContext, int timeout) {
         if (smtOptions.smt != SMTSolver.Z3) {
             return false;
         }
@@ -58,7 +58,7 @@ public class SMTOperations {
             if (javaExecutionOptions.debugZ3Queries) {
                 log.format("\nZ3 constraint query:\n%s\n", query);
             }
-            result = z3.isUnsat(query, smtOptions.z3CnstrTimeout, formulaContext.z3Profiler);
+            result = z3.isUnsat(query, timeout, formulaContext.z3Profiler);
             if (result && RuleAuditing.isAuditBegun()) {
                 log.format("SMT query returned unsat: %s\n", query);
             }
@@ -74,6 +74,10 @@ public class SMTOperations {
             throw e;
         }
         return result;
+    }
+
+    public boolean checkUnsat(ConjunctiveFormula constraint, FormulaContext formulaContext) {
+        return checkUnsatWithTimeout(constraint, formulaContext, smtOptions.z3CnstrTimeout);
     }
 
     /**

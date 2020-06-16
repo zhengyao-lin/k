@@ -42,7 +42,7 @@ public class EquivChecker {
     static int query_counter = 0;
     static File current_query_dir = null;
 
-    public synchronized static void saveZ3Result(String query, String result, long time) {
+    public synchronized static void saveZ3Result(String query, String result, long time, ProcessBuilder proc) {
         if (KEqFrontEnd.globalKEqOptions.z3QueryLogDir != null) {
             try {
                 if (current_query_dir == null) {
@@ -57,10 +57,13 @@ public class EquivChecker {
                     System.out.println("storing z3 queries to " + current_query_dir.getAbsolutePath());
                 }
 
+                String command = String.join(" ", proc.command());
+
                 File log = new File(current_query_dir, "q-" + query_counter + ".smt");
                 log.createNewFile();
 
                 FileWriter writer = new FileWriter(log);
+                writer.write("; " + command + "\n\n");
                 writer.write(query + "\n\n(check-sat)\n");
                 writer.write("; " + result + ", took " + time + "ms\n");
                 writer.close();
@@ -357,17 +360,26 @@ public class EquivChecker {
         Boolean check2 = null;
         Boolean check3 = null;
 
-        if (!(check1 = c.isFalse()) && !(check2 = c.checkUnsat(new FormulaContext(FormulaContext.Kind.EquivConstr, null, c.globalContext())))
+        long begin = System.currentTimeMillis();
+
+        if (!(check1 = c.isFalse()) &&
+                // use the same timeout as implication to avoid incorrect matches
+                !(check2 = c.checkUnsatWithTimeout(new FormulaContext(FormulaContext.Kind.EquivConstr, null, c.globalContext()),
+                                                    c.globalContext().constraintOps.smtOptions.z3ImplTimeout))
                 && (check3 = c.smartImplies(e))) {
+            long elapsed = System.currentTimeMillis() - begin;
+
             // these two synchronization nodes match
             // a synchronization point
             ct1.mark = Mark.BLACK;
             ct2.mark = Mark.BLACK;
 
-            debug("    !!! YES");
+            debug("    !!! YES took " + elapsed + "ms");
             return true;
         } else {
-            debug("    !!! NO");
+            long elapsed = System.currentTimeMillis() - begin;
+
+            debug("    !!! NO took " + elapsed + "ms");
             smt("    c (unsat: " + check1 + ") = " + c.toStringMultiline());
             smt("    ####################");
             smt("    e = " + e.toStringMultiline());

@@ -95,16 +95,24 @@ public class Z3Wrapper {
     private boolean checkQueryWithExternalProcess(CharSequence query, int timeout, Z3Profiler profiler) {
         String result = "";
         profiler.startQuery();
-        long begin = System.currentTimeMillis();
         try {
-            ProcessBuilder pb = files.getProcessBuilder().command(
-                    OS.current().getNativeExecutable("z3"),
-                    "-in",
-                    "-smt2",
-                    "-t:" + timeout);
+            ProcessBuilder pb;
+            if (timeout > 0) {
+                pb = files.getProcessBuilder().command(
+                        OS.current().getNativeExecutable("z3"),
+                        "-in",
+                        "-smt2",
+                        "-t:" + timeout);
+            } else {
+                pb = files.getProcessBuilder().command(
+                        OS.current().getNativeExecutable("z3"),
+                        "-in",
+                        "-smt2");
+            }
             pb.redirectInput(ProcessBuilder.Redirect.PIPE);
             pb.redirectOutput(ProcessBuilder.Redirect.PIPE);
             profiler.startRun();
+            long begin = System.currentTimeMillis();
             Process z3Process = pb.start();
             PrintWriter input = new PrintWriter(z3Process.getOutputStream());
             input.format("%s%s%s\n", SMT_PRELUDE, query, CHECK_SAT);
@@ -113,10 +121,19 @@ public class Z3Wrapper {
             // https://stackoverflow.com/a/7100172/4182868
             result = IOUtils.toString(z3Process.getInputStream()).trim();
             z3Process.destroy();
+            long elapsed = System.currentTimeMillis() - begin;
             profiler.endRun(timeout);
 
             if (result.isEmpty()) {
                 result = "Z3 error: ended with no output";
+            }
+
+            EquivChecker.addAccumulatedZ3Time(elapsed);
+            EquivChecker.saveZ3Result(query.toString(), result, elapsed, pb);
+
+            if (timeout > 0 && elapsed > timeout) {
+                EquivChecker.debug("z3 query likely timed out");
+                EquivChecker.trace(query.toString());
             }
         } catch (IOException e) {
             throw KEMException.criticalError("Exception while invoking Z3", e);
@@ -124,13 +141,7 @@ public class Z3Wrapper {
             if (javaExecutionOptions.debugZ3 && profiler.isLastRunTimeout()) {
                 //In case of timeout, result is "unknown", so evaluation can proceed.
                 global.log().format("\nZ3 likely timeout\n");
-                EquivChecker.trace("smt query likely timed out:");
-                EquivChecker.trace(query.toString());
             }
-
-            long elapsed = System.currentTimeMillis() - begin;
-            EquivChecker.addAccumulatedZ3Time(elapsed);
-            EquivChecker.saveZ3Result(query.toString(), result, elapsed);
         }
         stateLog.log(StateLog.LogEvent.Z3RESULT, KToken(result, Sorts.Z3Result()));
         if (!Z3_QUERY_RESULTS.contains(result)) {
