@@ -464,7 +464,7 @@ module INT
   rule signExtendBitRangeInt(I::Int, IDX::Int, LEN::Int) => (bitRangeInt(I, IDX, LEN) +Int (1 <<Int (LEN -Int 1))) modInt (1 <<Int LEN) -Int (1 <<Int (LEN -Int 1))
 
   rule I1:Int divInt I2:Int => (I1 -Int (I1 modInt I2)) /Int I2
-  requires I2 =/=Int 0
+  requires I2 =/=Int 0 [concrete]
   rule
     I1:Int modInt I2:Int
   =>

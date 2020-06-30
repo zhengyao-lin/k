@@ -60,9 +60,9 @@ public class Z3Wrapper {
         CHECK_SAT = options.z3Tactic == null ? "(check-sat)" : "(check-sat-using " + options.z3Tactic + ")";
     }
 
-    public synchronized boolean isUnsat(CharSequence query, int timeout, Z3Profiler timer) {
-        stateLog.log(StateLog.LogEvent.Z3QUERY,
-                KToken(SMT_PRELUDE + "\n" + query + "\n" + CHECK_SAT + "\n", Sorts.Z3Query()));
+    public boolean isUnsat(CharSequence query, int timeout, Z3Profiler timer) {
+        // stateLog.log(StateLog.LogEvent.Z3QUERY,
+        //         KToken(SMT_PRELUDE + "\n" + query + "\n" + CHECK_SAT + "\n", Sorts.Z3Query()));
         if (options.z3JNI) {
             return checkQueryWithLibrary(query, timeout);
         } else {
@@ -94,7 +94,7 @@ public class Z3Wrapper {
      */
     private boolean checkQueryWithExternalProcess(CharSequence query, int timeout, Z3Profiler profiler) {
         String result = "";
-        profiler.startQuery();
+        // profiler.startQuery();
         try {
             ProcessBuilder pb;
             if (timeout > 0) {
@@ -111,7 +111,7 @@ public class Z3Wrapper {
             }
             pb.redirectInput(ProcessBuilder.Redirect.PIPE);
             pb.redirectOutput(ProcessBuilder.Redirect.PIPE);
-            profiler.startRun();
+            // profiler.startRun();
             long begin = System.currentTimeMillis();
             Process z3Process = pb.start();
             PrintWriter input = new PrintWriter(z3Process.getOutputStream());
@@ -122,7 +122,7 @@ public class Z3Wrapper {
             result = IOUtils.toString(z3Process.getInputStream()).trim();
             z3Process.destroy();
             long elapsed = System.currentTimeMillis() - begin;
-            profiler.endRun(timeout);
+            // profiler.endRun(timeout);
 
             if (result.isEmpty()) {
                 result = "Z3 error: ended with no output";
@@ -138,19 +138,19 @@ public class Z3Wrapper {
         } catch (IOException e) {
             throw KEMException.criticalError("Exception while invoking Z3", e);
         } finally {
-            if (javaExecutionOptions.debugZ3 && profiler.isLastRunTimeout()) {
+            // if (javaExecutionOptions.debugZ3 && profiler.isLastRunTimeout()) {
                 //In case of timeout, result is "unknown", so evaluation can proceed.
-                global.log().format("\nZ3 likely timeout\n");
-            }
+                // global.log().format("\nZ3 likely timeout\n");
+            // }
         }
-        stateLog.log(StateLog.LogEvent.Z3RESULT, KToken(result, Sorts.Z3Result()));
+        // stateLog.log(StateLog.LogEvent.Z3RESULT, KToken(result, Sorts.Z3Result()));
         if (!Z3_QUERY_RESULTS.contains(result)) {
             throw KEMException.criticalError("Z3 crashed on input query:\n" + query + "\nresult:\n" + result);
         }
         if (javaExecutionOptions.debugZ3) {
             global.log().format("\nZ3 query result: %s\n", result);
         }
-        profiler.queryResult(result);
+        // profiler.queryResult(result);
         return "unsat".equals(result);
     }
 }
