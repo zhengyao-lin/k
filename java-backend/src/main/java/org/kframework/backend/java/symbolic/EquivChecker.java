@@ -24,10 +24,14 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Created by daejunpark on 8/15/16.
@@ -91,8 +95,8 @@ public class EquivChecker {
             java.util.List<Boolean> trusted1,
             java.util.List<Boolean> trusted2,
             //
-            SymbolicRewriter rewriter1,
-            SymbolicRewriter rewriter2
+            SymbolicRewriter[] rewriters1,
+            SymbolicRewriter[] rewriters2
     ) {
         assert startEnsures.size() == targetEnsures.size();
         assert targetSyncNodes1.size() == targetEnsures.size();
@@ -152,13 +156,13 @@ public class EquivChecker {
 
             Runnable f1 = () -> {
                 long begin1 = System.currentTimeMillis();
-                syncNodes1.set(getNextSyncNodes(currSyncNodes1, targetSyncNodes1, rewriter1));
+                syncNodes1.set(getNextSyncNodes("llvm", currSyncNodes1, targetSyncNodes1, rewriters1));
                 symExecTime1.set(System.currentTimeMillis() - begin1);
             };
 
             Runnable f2 = () -> {
                 long begin2 = System.currentTimeMillis();
-                syncNodes2.set(getNextSyncNodes(currSyncNodes2, targetSyncNodes2, rewriter2));
+                syncNodes2.set(getNextSyncNodes("vx86", currSyncNodes2, targetSyncNodes2, rewriters2));
                 symExecTime2.set(System.currentTimeMillis() - begin2);
             };
 
@@ -245,22 +249,79 @@ public class EquivChecker {
     }
 
     public static java.util.List<Set<SyncNode>> getNextSyncNodes(
+            String name,
             java.util.List<SyncNode> currSyncNodes,
             java.util.List<ConstrainedTerm> targetSyncNodes,
             //
-            SymbolicRewriter rewriter
+            SymbolicRewriter[] rewriters
     ) {
         int numSyncPoints = targetSyncNodes.size();
+
+        Lock lock = new ReentrantLock();
+
         java.util.List<Set<SyncNode>> nextSyncNodes = newListOfSets(numSyncPoints);
-        for (SyncNode currSyncNode : currSyncNodes) {
-            java.util.List<Set<SyncNode>> nodes = getNextSyncNodes(currSyncNode, targetSyncNodes, rewriter);
-            if (nodes == null) return null; // failed // TODO: output more information for failure
-            nextSyncNodes = mergeListOfSets(nextSyncNodes, nodes);
-        }
+        java.util.List<SyncNode> queue = new ArrayList<>(currSyncNodes);
+
+        AtomicBoolean failed = new AtomicBoolean(false);
+        AtomicInteger threadCount = new AtomicInteger(0);
+
+        debug("[" + name + "] rewriting started with " + rewriters.length + " job(s)");
+
+        Stream.of(rewriters).map((rewriter) -> {
+            int i = threadCount.getAndIncrement();
+            debug("[" + name + "] thread " + i + " started");
+            Thread thread = new Thread(() -> {
+                while (!failed.get()) {
+                    // pull from queue
+                    lock.lock();
+                    if (queue.isEmpty()) {
+                        lock.unlock();
+                        return;
+                    }
+                    SyncNode currSyncNode = queue.remove(0);
+                    lock.unlock();
+
+                    debug("[" + name + "] rewriter thread " + i + " got a job");
+                    trace(currSyncNode.currSyncNode.toString());
+
+                    java.util.List<Set<SyncNode>> nodes = getNextSyncNodes(name + "-" + i, currSyncNode, targetSyncNodes, rewriter);
+
+                    debug("[" + name + "] rewriter thread " + i + " finished a job");
+
+                    if (nodes == null) {
+                        failed.set(true);
+                        return;
+                    }
+
+                    lock.lock();
+                    mergeListOfSets(nextSyncNodes, nodes);
+                    lock.unlock();
+                }
+            });
+            thread.start();
+            return thread;
+        }).collect(Collectors.toList()).forEach(thread -> {
+            // join each in order
+            try {
+                thread.join();
+            } catch (Exception e) {
+                failed.set(true);
+                debug(e.toString());
+            }
+        });
+
+        if (failed.get()) return null;
+
+//        for (SyncNode currSyncNode : currSyncNodes) {
+//            java.util.List<Set<SyncNode>> nodes = getNextSyncNodes(currSyncNode, targetSyncNodes, rewriters[0]);
+//            if (nodes == null) return null; // failed // TODO: output more information for failure
+//            nextSyncNodes = mergeListOfSets(nextSyncNodes, nodes);
+//        }
         return nextSyncNodes;
     }
 
     public static java.util.List<Set<SyncNode>> getNextSyncNodes(
+            String name,
             SyncNode currSyncNode,
             java.util.List<ConstrainedTerm> targetSyncNodes,
             //
@@ -278,15 +339,15 @@ public class EquivChecker {
 
         int steps = 0;
 
-        trace("rewriting starts from term: " + initTerm.toString());
+        trace("[" + name + "] rewriting starts from term: " + initTerm.toString());
 
         while (!queue.isEmpty()) {
             ++steps;
 
-            debug("#################### step " + steps + ", width: " + queue.size());
+            debug("[" + name + "] #################### step " + steps + ", width: " + queue.size());
 
             for (ConstrainedTerm curr : queue) {
-                trace(">>> from term: " + curr.toString());
+                trace("[" + name + "] >>> from term: " + curr.toString());
 
                 long begin = System.currentTimeMillis();
                 // temporary fix for get_block_head_tail
@@ -294,17 +355,17 @@ public class EquivChecker {
                 java.util.List<ConstrainedTerm> nexts = rewriter.fastComputeRewriteStep(curr, false, true, true, steps,
                         initTerm);
                 long elapsed = System.currentTimeMillis() - begin;
-                debug("rewriting took: " + elapsed + "ms");
+                debug("[" + name + "] rewriting took: " + elapsed + "ms");
 
                 if (nexts.isEmpty()) {
                     /* final term */
-                    debug("!!! no possible rewrites");
+                    debug("[" + name + "] !!! no possible rewrites");
                     return null; // failed // TODO: output more information for failure
                 }
 
             loop:
                 for (ConstrainedTerm next : nexts) {
-                    trace("==> to term: " + next.toString());
+                    trace("[" + name + "] ==> to term: " + next.toString());
 
                     begin = System.currentTimeMillis();
 
@@ -314,12 +375,12 @@ public class EquivChecker {
                         if (constraint != null) {
                             SyncNode node = new SyncNode(currSyncNode.startSyncPoint, currSyncNode, next, constraint);
                             nextSyncNodes.get(i).add(node);
-                            debug("+++ term matched to sync point " + i + ", matching took " + (System.currentTimeMillis() - begin) + "ms");
+                            debug("[" + name + "] +++ term matched to sync point " + i + ", matching took " + (System.currentTimeMillis() - begin) + "ms");
                             continue loop;
                         }
                     }
 
-                    debug("!!! term not matched to any sync point, matching took " + (System.currentTimeMillis() - begin) + "ms");
+                    debug("[" + name + "] !!! term not matched to any sync point, matching took " + (System.currentTimeMillis() - begin) + "ms");
                     nextQueue.add(next);
                 }
             }

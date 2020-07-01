@@ -24,6 +24,7 @@ import org.kframework.compile.ExpandMacros;
 import org.kframework.compile.ResolveSemanticCasts;
 import org.kframework.definition.Module;
 import org.kframework.definition.Rule;
+import org.kframework.keq.KEqFrontEnd;
 import org.kframework.kil.Attribute;
 import org.kframework.kompile.KompileOptions;
 import org.kframework.kore.K;
@@ -120,7 +121,7 @@ public class InitializeRewriter implements Function<org.kframework.definition.De
     }
 
     @Override
-    public synchronized Rewriter apply(org.kframework.definition.Definition def) {
+    public Rewriter apply(org.kframework.definition.Definition def) {
         GlobalContext initializingContext = newGlobalContext(def, Stage.INITIALIZING);
         Definition definition = initializeDefinition.invoke(def.mainModule(), kem, initializingContext);
         GlobalContext rewritingContext = newGlobalContext(def, Stage.REWRITING);
@@ -300,6 +301,22 @@ public class InitializeRewriter implements Function<org.kframework.definition.De
                 targetEnsures.add(getConjunctiveFormula(state1.targetEnsures.get(i), state2.targetEnsures.get(i), rewritingContext));
             }
 
+            // initialize an array of rewriters
+            assert KEqFrontEnd.globalKEqOptions.parallel % 2 == 0;
+            int jobs = KEqFrontEnd.globalKEqOptions.parallel > 1 ? KEqFrontEnd.globalKEqOptions.parallel / 2 : 1;
+
+            SymbolicRewriter[] rewriters1 = new SymbolicRewriter[jobs];
+            SymbolicRewriter[] rewriters2 = new SymbolicRewriter[jobs];
+
+            rewriters1[0] = state1.rewriter;
+            rewriters2[0] = state2.rewriter;
+
+            for (int i = 1; i < jobs; i++) {
+                System.out.println("creating rewriter " + i);
+                rewriters1[i] = new SymbolicRewriter(glue1.rewritingContext, glue1.getTransitions(), state1.processProofRules.converter);
+                rewriters2[i] = new SymbolicRewriter(glue2.rewritingContext, glue2.getTransitions(), state2.processProofRules.converter);
+            }
+
             long begin = System.currentTimeMillis();
 
             boolean result = EquivChecker.equiv(
@@ -308,7 +325,7 @@ public class InitializeRewriter implements Function<org.kframework.definition.De
                 startEnsures, //info1.startEnsures, info2.startEnsures,
                 targetEnsures, //info1.targetEnsures, info2.targetEnsures,
                 state1.trusted, state2.trusted,
-                state1.rewriter, state2.rewriter
+                rewriters1, rewriters2
             );
 
             long elapsed = System.currentTimeMillis() - begin;
@@ -419,9 +436,10 @@ public class InitializeRewriter implements Function<org.kframework.definition.De
         final List<ConjunctiveFormula> targetEnsures;
         final List<Boolean> trusted;
         final SymbolicRewriter rewriter;
+        final SymbolicRewriterGlue.ProcessProofRules processProofRules;
 
         EquivalenceState(SymbolicRewriterGlue glue, Module specModule) {
-            SymbolicRewriterGlue.ProcessProofRules processProofRules = glue.new ProcessProofRules(specModule);
+            processProofRules = glue.new ProcessProofRules(specModule);
             List<org.kframework.backend.java.kil.Rule> specRules = processProofRules.specRules;
             java.util.Collections.sort(specRules, new Comparator<org.kframework.backend.java.kil.Rule>() {
                 @Override

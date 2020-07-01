@@ -13,6 +13,8 @@ import org.kframework.utils.file.FileUtil;
 import scala.Tuple2;
 
 import java.util.function.Function;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 public class KEq {
     private final KExceptionManager kem;
@@ -40,20 +42,20 @@ public class KEq {
         Module[] specs = new Module[2];
 
         Thread t0 = new Thread(() -> {
-            rewriters[2] = commonGen.apply(commonDef.kompiledDefinition);
+            rewriters[0] = commonGen.apply(commonDef.kompiledDefinition);
         });
 
         Thread t1 = new Thread(() -> {
             Tuple2<Definition, Module> compiled1 = KProve.getProofDefinition(files.resolveWorkingDirectory(keqOptions.spec1), keqOptions.defModule1, keqOptions.specModule1, def1, backend, files, kem, sw);
             Runtime.getRuntime().gc();
-            rewriters[0] = gen1.apply(compiled1._1());
+            rewriters[1] = gen1.apply(compiled1._1());
             specs[0] = compiled1._2();
         });
 
         Thread t2 = new Thread(() -> {
             Tuple2<Definition, Module> compiled2 = KProve.getProofDefinition(files.resolveWorkingDirectory(keqOptions.spec2), keqOptions.defModule2, keqOptions.specModule2, def2, backend, files, kem, sw);
             Runtime.getRuntime().gc();
-            rewriters[1] = gen2.apply(compiled2._1());
+            rewriters[2] = gen2.apply(compiled2._1());
             specs[1] = compiled2._2();
         });
 
@@ -85,7 +87,7 @@ public class KEq {
             }
         }
 
-        boolean isEquivalent = rewriters[2].equivalence(rewriters[0], rewriters[1], specs[0], specs[1]);
+        boolean isEquivalent = rewriters[0].equivalence(rewriters[1], rewriters[2], specs[0], specs[1]);
 
         System.out.println(isEquivalent ? "#True" : "#False");
 

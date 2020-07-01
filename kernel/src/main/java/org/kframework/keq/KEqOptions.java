@@ -61,7 +61,7 @@ public final class KEqOptions {
     @Parameter(names={"--show-smt"}, description="Show detailed SMT log")
     public boolean showSMT;
 
-    @Parameter(names={"--parallel"}, description="Number of parallel jobs (min 1)")
+    @Parameter(names={"--parallel"}, description="Number of parallel jobs (min 1), has to be a multiple of 2")
     public int parallel = 1;
 
     @Parameter(names={"--mem-monitor-interval"}, description="Interval for memory monitor in milliseconds")
