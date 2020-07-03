@@ -5,16 +5,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-import org.kframework.backend.java.symbolic.ConjunctiveFormula;
-import org.kframework.backend.java.symbolic.DisjunctiveFormula;
-import org.kframework.backend.java.symbolic.Equality;
-import org.kframework.backend.java.symbolic.FastRuleMatcher;
-import org.kframework.backend.java.symbolic.PatternExpander;
-import org.kframework.backend.java.symbolic.PersistentUniqueList;
-import org.kframework.backend.java.symbolic.Transformer;
-import org.kframework.backend.java.symbolic.Visitor;
+import org.kframework.backend.java.symbolic.*;
 import org.kframework.backend.java.util.Constants;
 
 import com.google.common.collect.Lists;
@@ -199,6 +193,8 @@ public class ConstrainedTerm extends JavaSymbolicObject {
             implicationRHS =
                     (ConjunctiveFormula) implicationRHS.substituteAndEvaluate(implicationLHS.substitution(), context);
 
+            EquivChecker.debug("*** match impl");
+
             boolean implies = implicationLHS.implies(implicationRHS, matchRHSOnlyVars, formulaContext);
             if (!implies) {
                 return null;
@@ -292,9 +288,13 @@ public class ConstrainedTerm extends JavaSymbolicObject {
                   constraints to both fall under this optimization but to have equalities
                   that induce different results.
              */
+
+            Predicate<Boolean> r = b -> { EquivChecker.debug("*** subst opt impl"); return b; };
+
             assert solution.disjunctions().isEmpty();
             if (candidate.substitution().keySet().equals(variables)
                     && !candidate.isSubstitution()
+                    && r.test(true)
                     && subjectConstraint.implies(ConjunctiveFormula.of(context.global())
                     .addAll(candidateConstraint.equalities()), Sets.newHashSet(), formulaContext)) {
                 solutions.add(Triple.of(

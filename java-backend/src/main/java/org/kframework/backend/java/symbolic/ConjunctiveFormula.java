@@ -34,6 +34,7 @@ import org.kframework.backend.java.util.FormulaContext;
 import org.kframework.backend.java.util.RewriteEngineUtils;
 import org.kframework.backend.java.util.StateLog;
 import org.kframework.builtin.KLabels;
+import scala.math.Equiv;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -907,6 +908,8 @@ public class ConjunctiveFormula extends Term implements CollectionInternalRepres
 
         assert !rightHandSide.isFalse();
 
+        EquivChecker.debug("*** impl called");
+
         LinkedList<Pair<ConjunctiveFormula, ConjunctiveFormula>> implications = new LinkedList<>();
         implications.add(Pair.of(this, rightHandSide));
         while (!implications.isEmpty()) {
@@ -1027,6 +1030,8 @@ public class ConjunctiveFormula extends Term implements CollectionInternalRepres
                 cached = false;
             }
             Boolean result = impliesSMTCache.get(triple);
+
+            EquivChecker.debug("*** z3 impl called, cached: " + cached);
 
             if (left.globalContext().javaExecutionOptions.debugZ3) {
                 formulaContext.printImplication(left, right, result, cached);

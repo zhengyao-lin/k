@@ -22,18 +22,14 @@ import org.kframework.backend.java.kil.Term;
 import org.kframework.backend.java.kil.TermContext;
 import org.kframework.backend.java.kil.Variable;
 import org.kframework.backend.java.rewritemachine.RHSInstruction;
-import org.kframework.backend.java.symbolic.ConjunctiveFormula;
-import org.kframework.backend.java.symbolic.Equality;
-import org.kframework.backend.java.symbolic.ImmutableMapSubstitution;
-import org.kframework.backend.java.symbolic.PatternMatcher;
-import org.kframework.backend.java.symbolic.RuleAuditing;
-import org.kframework.backend.java.symbolic.Substitution;
+import org.kframework.backend.java.symbolic.*;
 
 import java.util.Collections;
 import java.util.Deque;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
@@ -141,9 +137,11 @@ public class RewriteEngineUtils {
                 // the substitution obtained from evaluating the side
                 // condition
                 Term evaluatedReq = construct(rule.instructionsOfRequires().get(i), crntSubst, context);
+                Predicate<Boolean> r = b -> { EquivChecker.debug("*** evaluateConditions impl"); return b; };
                 if (!evaluatedReq.equals(BoolToken.TRUE)) {
                     if (!evaluatedReq.isGround()
                             && context.getTopConstraint() != null
+                            && r.test(true)
                             && context.getTopConstraint().implies(ConjunctiveFormula.of(context.global()).add(evaluatedReq, BoolToken.TRUE), Collections.emptySet(),
                             new FormulaContext(FormulaContext.Kind.FunctionRule, rule, context.global()))) {
                         i++;

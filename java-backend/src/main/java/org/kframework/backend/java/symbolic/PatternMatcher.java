@@ -126,6 +126,8 @@ public class PatternMatcher extends AbstractUnifier {
                                                            String logMsg, int nestingLevel) {
         PatternMatcher matcher = new PatternMatcher(rule.isFunction() || rule.isLemma(), true, context);
 
+        // EquivChecker.debug("^^^ match called");
+
         if (!matcher.patternMatch(subject, rule.leftHandSide())) {
             return Collections.emptyList();
         }

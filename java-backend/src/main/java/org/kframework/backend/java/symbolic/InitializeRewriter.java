@@ -302,7 +302,7 @@ public class InitializeRewriter implements Function<org.kframework.definition.De
             }
 
             // initialize an array of rewriters
-            assert KEqFrontEnd.globalKEqOptions.parallel % 2 == 0;
+            assert KEqFrontEnd.globalKEqOptions.parallel == 1 || KEqFrontEnd.globalKEqOptions.parallel % 2 == 0;
             int jobs = KEqFrontEnd.globalKEqOptions.parallel > 1 ? KEqFrontEnd.globalKEqOptions.parallel / 2 : 1;
 
             SymbolicRewriter[] rewriters1 = new SymbolicRewriter[jobs];

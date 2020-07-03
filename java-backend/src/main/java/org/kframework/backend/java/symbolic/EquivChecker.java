@@ -45,6 +45,7 @@ public class EquivChecker {
 
     static int query_counter = 0;
     static File current_query_dir = null;
+    static boolean has_symbolic_exec_finished = false;
 
     public synchronized static void saveZ3Result(String query, String result, long time, ProcessBuilder proc) {
         if (KEqFrontEnd.globalKEqOptions.z3QueryLogDir != null) {
@@ -70,6 +71,11 @@ public class EquivChecker {
                 writer.write("; " + command + "\n\n");
                 writer.write(query + "\n\n(check-sat)\n");
                 writer.write("; " + result + ", took " + time + "ms\n");
+                if (!has_symbolic_exec_finished) {
+                    writer.write("; symbolic exec\n");
+                } else {
+                    writer.write("; sync point matching\n");
+                }
                 writer.close();
 
                 query_counter += 1;
@@ -196,6 +202,8 @@ public class EquivChecker {
 
             long elapsed = System.currentTimeMillis() - begin;
 
+            // a flag to separate z3 logs
+            has_symbolic_exec_finished = true;
             debug("### end of one round of symbolic execution:");
             debug("  - symbolic execution total: " + (((double)elapsed) / 1000.0) + "s");
             debug("  - symbolic execution 1 total: " + (((double)symExecTime1.get()) / 1000.0) + "s");
@@ -257,7 +265,8 @@ public class EquivChecker {
     ) {
         int numSyncPoints = targetSyncNodes.size();
 
-        Lock lock = new ReentrantLock();
+        Lock queueLock = new ReentrantLock();
+        Lock implLock = new ReentrantLock();
 
         java.util.List<Set<SyncNode>> nextSyncNodes = newListOfSets(numSyncPoints);
         java.util.List<SyncNode> queue = new ArrayList<>(currSyncNodes);
@@ -273,18 +282,24 @@ public class EquivChecker {
             Thread thread = new Thread(() -> {
                 while (!failed.get()) {
                     // pull from queue
-                    lock.lock();
+                    queueLock.lock();
                     if (queue.isEmpty()) {
-                        lock.unlock();
+                        queueLock.unlock();
                         return;
                     }
                     SyncNode currSyncNode = queue.remove(0);
-                    lock.unlock();
+                    queueLock.unlock();
 
                     debug("[" + name + "] rewriter thread " + i + " got a job");
                     trace(currSyncNode.currSyncNode.toString());
 
-                    java.util.List<Set<SyncNode>> nodes = getNextSyncNodes(name + "-" + i, currSyncNode, targetSyncNodes, rewriter);
+                    java.util.List<Set<SyncNode>> nodes = getNextSyncNodes(
+                            name + "-" + i,
+                            currSyncNode,
+                            targetSyncNodes,
+                            rewriter,
+                            implLock
+                    );
 
                     debug("[" + name + "] rewriter thread " + i + " finished a job");
 
@@ -293,9 +308,9 @@ public class EquivChecker {
                         return;
                     }
 
-                    lock.lock();
+                    queueLock.lock();
                     mergeListOfSets(nextSyncNodes, nodes);
-                    lock.unlock();
+                    queueLock.unlock();
                 }
             });
             thread.start();
@@ -325,7 +340,8 @@ public class EquivChecker {
             SyncNode currSyncNode,
             java.util.List<ConstrainedTerm> targetSyncNodes,
             //
-            SymbolicRewriter rewriter
+            SymbolicRewriter rewriter,
+            Lock implLock
     ) {
         int numSyncPoints = targetSyncNodes.size();
 
@@ -370,8 +386,11 @@ public class EquivChecker {
                     begin = System.currentTimeMillis();
 
                     for (int i = 0; i < numSyncPoints; i++) {
+                        implLock.lock();
+                        // debug("[" + name + "] *** try to match sync point " + i);
                         ConjunctiveFormula constraint = next.matchImplies(targetSyncNodes.get(i), true, false,
                                 new FormulaContext(FormulaContext.Kind.EquivImplication, null, next.termContext().global()), null);
+                        implLock.unlock();
                         if (constraint != null) {
                             SyncNode node = new SyncNode(currSyncNode.startSyncPoint, currSyncNode, next, constraint);
                             nextSyncNodes.get(i).add(node);
