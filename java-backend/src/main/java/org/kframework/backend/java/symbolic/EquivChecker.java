@@ -39,6 +39,18 @@ public class EquivChecker {
     public static void smt(String msg) { if (KEqFrontEnd.globalKEqOptions.showSMT) System.out.println(msg); }
     public static void debug(String msg) { System.out.println(msg); }
 
+    public static void debug(String header, String msg)  {
+        debug("[" + header + "] " + msg);
+    }
+
+    public static void smt(String header, String msg)  {
+        smt("[" + header + "] " + msg);
+    }
+
+    public static void trace(String header, String msg)  {
+        trace("[" + header + "] " + msg);
+    }
+
     static int query_counter = 0;
     static File current_query_dir = null;
 
@@ -152,13 +164,13 @@ public class EquivChecker {
 
             Runnable f1 = () -> {
                 long begin1 = System.currentTimeMillis();
-                syncNodes1.set(getNextSyncNodes(currSyncNodes1, targetSyncNodes1, rewriter1));
+                syncNodes1.set(getNextSyncNodes("llvm", currSyncNodes1, targetSyncNodes1, rewriter1));
                 symExecTime1.set(System.currentTimeMillis() - begin1);
             };
 
             Runnable f2 = () -> {
                 long begin2 = System.currentTimeMillis();
-                syncNodes2.set(getNextSyncNodes(currSyncNodes2, targetSyncNodes2, rewriter2));
+                syncNodes2.set(getNextSyncNodes("vx86", currSyncNodes2, targetSyncNodes2, rewriter2));
                 symExecTime2.set(System.currentTimeMillis() - begin2);
             };
 
@@ -245,15 +257,15 @@ public class EquivChecker {
     }
 
     public static java.util.List<Set<SyncNode>> getNextSyncNodes(
+            String name,
             java.util.List<SyncNode> currSyncNodes,
             java.util.List<ConstrainedTerm> targetSyncNodes,
-            //
             SymbolicRewriter rewriter
     ) {
         int numSyncPoints = targetSyncNodes.size();
         java.util.List<Set<SyncNode>> nextSyncNodes = newListOfSets(numSyncPoints);
         for (SyncNode currSyncNode : currSyncNodes) {
-            java.util.List<Set<SyncNode>> nodes = getNextSyncNodes(currSyncNode, targetSyncNodes, rewriter);
+            java.util.List<Set<SyncNode>> nodes = getNextSyncNodes(name, currSyncNode, targetSyncNodes, rewriter);
             if (nodes == null) return null; // failed // TODO: output more information for failure
             nextSyncNodes = mergeListOfSets(nextSyncNodes, nodes);
         }
@@ -261,9 +273,9 @@ public class EquivChecker {
     }
 
     public static java.util.List<Set<SyncNode>> getNextSyncNodes(
+            String name,
             SyncNode currSyncNode,
             java.util.List<ConstrainedTerm> targetSyncNodes,
-            //
             SymbolicRewriter rewriter
     ) {
         int numSyncPoints = targetSyncNodes.size();
@@ -278,12 +290,13 @@ public class EquivChecker {
 
         int steps = 0;
 
-        trace("rewriting starts from term: " + initTerm.toString());
+        debug(name, "rewriting starts");
+        trace(name, "from term: " + initTerm.toString());
 
         while (!queue.isEmpty()) {
             ++steps;
 
-            debug("#################### step " + steps + ", width: " + queue.size());
+            debug(name, "#################### step " + steps + ", width: " + queue.size());
 
             for (ConstrainedTerm curr : queue) {
                 trace(">>> from term: " + curr.toString());
@@ -294,17 +307,17 @@ public class EquivChecker {
                 java.util.List<ConstrainedTerm> nexts = rewriter.fastComputeRewriteStep(curr, false, true, true, steps,
                         initTerm);
                 long elapsed = System.currentTimeMillis() - begin;
-                debug("rewriting took: " + elapsed + "ms");
+                debug(name, "rewriting took: " + elapsed + "ms");
 
                 if (nexts.isEmpty()) {
                     /* final term */
-                    debug("!!! no possible rewrites");
+                    debug(name, "!!! no possible rewrites");
                     return null; // failed // TODO: output more information for failure
                 }
 
             loop:
                 for (ConstrainedTerm next : nexts) {
-                    trace("==> to term: " + next.toString());
+                    trace(name, "==> to term: " + next.toString());
 
                     begin = System.currentTimeMillis();
 
@@ -314,12 +327,12 @@ public class EquivChecker {
                         if (constraint != null) {
                             SyncNode node = new SyncNode(currSyncNode.startSyncPoint, currSyncNode, next, constraint);
                             nextSyncNodes.get(i).add(node);
-                            debug("+++ term matched to sync point " + i + ", matching took " + (System.currentTimeMillis() - begin) + "ms");
+                            debug(name, "+++ term matched to sync point " + i + ", matching took " + (System.currentTimeMillis() - begin) + "ms");
                             continue loop;
                         }
                     }
 
-                    debug("!!! term not matched to any sync point, matching took " + (System.currentTimeMillis() - begin) + "ms");
+                    debug(name, "!!! term not matched to any sync point, matching took " + (System.currentTimeMillis() - begin) + "ms");
                     nextQueue.add(next);
                 }
             }
