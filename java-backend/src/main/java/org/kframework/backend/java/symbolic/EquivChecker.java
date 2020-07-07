@@ -71,6 +71,8 @@ public class EquivChecker {
 
                 String command = String.join(" ", proc.command());
 
+                debug("smt query " + current_query_dir + "/q-" + query_counter + ".smt made, result: " + result + ", took " + time + "ms");
+
                 File log = new File(current_query_dir, "q-" + query_counter + ".smt");
                 log.createNewFile();
 
@@ -299,7 +301,7 @@ public class EquivChecker {
             debug(name, "#################### step " + steps + ", width: " + queue.size());
 
             for (ConstrainedTerm curr : queue) {
-                trace(">>> from term: " + curr.toString());
+                trace(name, ">>> from term: " + curr.toString());
 
                 long begin = System.currentTimeMillis();
                 // temporary fix for get_block_head_tail
