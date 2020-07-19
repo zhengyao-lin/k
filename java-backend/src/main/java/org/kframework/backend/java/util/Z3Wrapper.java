@@ -31,7 +31,7 @@ public class Z3Wrapper {
 
     public static final Set<String> Z3_QUERY_RESULTS = ImmutableSet.of("unknown", "sat", "unsat");
 
-    public final String SMT_PRELUDE, CHECK_SAT;
+    public String SMT_PRELUDE, CHECK_SAT;
     private final SMTOptions options;
     private final JavaExecutionOptions javaExecutionOptions;
     private final KExceptionManager kem;
@@ -129,7 +129,7 @@ public class Z3Wrapper {
             }
 
             EquivChecker.addAccumulatedZ3Time(elapsed);
-            EquivChecker.saveZ3Result(query.toString(), result, elapsed, pb);
+            EquivChecker.saveZ3Result(SMT_PRELUDE, query.toString(), result, elapsed, pb);
 
             if (timeout > 0 && elapsed > timeout) {
                 EquivChecker.debug("z3 query likely timed out");

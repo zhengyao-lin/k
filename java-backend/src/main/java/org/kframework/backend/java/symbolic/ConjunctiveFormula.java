@@ -895,6 +895,17 @@ public class ConjunctiveFormula extends Term implements CollectionInternalRepres
                 new FormulaContext(FormulaContext.Kind.EquivImplication, null, constraint.global));
     }
 
+    public boolean dumbImplies(ConjunctiveFormula constraint) {
+        Set<Variable> rightOnlyVariables = Sets.difference(constraint.variableSet(), variableSet());
+        constraint = constraint.orientSubstitution(rightOnlyVariables);
+
+        ConjunctiveFormula rightHandSide = constraint.removeSubstitutionVars(rightOnlyVariables);
+        rightHandSide = (ConjunctiveFormula) rightHandSide.substitute(substitution());
+
+        return implies(rightHandSide, rightOnlyVariables,
+                       new FormulaContext(FormulaContext.Kind.EquivImplication, null, constraint.global));
+    }
+
     /**
      * Checks if {@code this} implies {@code rightHandSide}, assuming that {@code existentialQuantVars}
      * are existentially quantified.
@@ -972,7 +983,7 @@ public class ConjunctiveFormula extends Term implements CollectionInternalRepres
      * Simplifies the given constraint by eliding the equalities and substitution entries that are
      * implied by this constraint.
      */
-    private ConjunctiveFormula simplifyConstraint(ConjunctiveFormula constraint) {
+    public ConjunctiveFormula simplifyConstraint(ConjunctiveFormula constraint) {
         Substitution<Variable, Term> simplifiedSubstitution = constraint.substitution.minusAll(
                 Maps.difference(constraint.substitution, substitution).entriesInCommon().keySet());
         Predicate<Equality> inConstraint = equality -> !equalities().contains(equality)

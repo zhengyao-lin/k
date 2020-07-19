@@ -17,7 +17,7 @@ import java.util.Set;
 public class SMTOperations {
 
     public final SMTOptions        smtOptions;
-    private final Z3Wrapper         z3;
+    public final Z3Wrapper         z3;
     private final JavaExecutionOptions javaExecutionOptions;
     private final KExceptionManager kem;
 
