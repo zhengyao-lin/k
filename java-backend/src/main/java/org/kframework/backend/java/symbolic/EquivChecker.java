@@ -346,7 +346,9 @@ public class EquivChecker {
                         if (constraint != null) {
                             SyncNode node = new SyncNode(currSyncNode.startSyncPoint, i, currSyncNode, next, constraint);
                             nextSyncNodes.add(node);
-                            debug(name, "+++ term matched to sync point " + i + ", matching took " + (System.currentTimeMillis() - begin) + "ms");
+                            debug(name, "+++ term matched to sync point " + i +
+                                    ", creating sync node " + System.identityHashCode(node) +
+                                    ", matching took " + (System.currentTimeMillis() - begin) + "ms");
                             continue loop;
                         }
                     }
@@ -395,7 +397,7 @@ public class EquivChecker {
             Set<SyncNode> allSyncNodes1,
             Set<SyncNode> allSyncNodes2
             ) {
-        debug("??? do they match");
+        debug("matching nodes " + System.identityHashCode(ct1) + " and " + System.identityHashCode(ct2));
         trace("    - [llvm] " + ct1.currSyncNode.toString());
         trace("             constraint: " + ct1.constraint.toString());
         trace("    - [vx86] " + ct2.currSyncNode.toString());
@@ -428,84 +430,6 @@ public class EquivChecker {
                 (check3 = c.smartImplies(e));
 
         if (prelimBisimular) {
-            // the next path condition check is to make sure that
-            // ANY concrete models of both symbolic states are actually
-            // captured by the conjunction of their respective constraints.
-            // Otherwise we would have an unsoundness issue where some
-            // concrete state may slip through without being checked for
-            // acceptability.
-
-            // extract new constraints generated during the execution:  curr.constraint - prev.constraint
-//            ConjunctiveFormula pathCondition1 = getPathCondition(ct1);
-//            ConjunctiveFormula pathCondition2 = getPathCondition(ct2);
-//
-//            trace("    [llvm] path condition: " + pathCondition1.toString());
-//            trace("    [vx86] path condition: " + pathCondition2.toString());
-
-//            if (c1.add(c0).orientSubstitution(pathCondition2.variableSet()).dumbImplies(pathCondition2)) {
-//                c1c2 = true;
-//                debug("    lhs ==> rhs");
-//            }
-
-            // only check if rhs (vx86) is subsumed by lhs (llvm)
-            // this is only enough for refinement (vx86 refines llvm or llvm simulates vx86)
-
-            // we only need to check for a weaker condition, that is if
-            // c2 /\ c0 => (pathCondition1 \/ error constraints 1 \/ errors constraints 2 ...)
-            // where error constraints are the constraints of error terms rewritten from the same starting sync node
-
-//            ConjunctiveFormula lhs = c2.add(c0);
-//            ConjunctiveFormula rhs = pathCondition1;
-//
-//            if (errorConditions != null) {
-//                List<ConjunctiveFormula> disjunctions = new ArrayList<>();
-//
-//                new DisjunctiveFormula()
-//
-//                // remove all the concrete state that can correspond to error states in llvm
-//                trace("    adding negated error conditions: " + negatedErrorConditions.toString());
-//                lhs = lhs.add(negatedErrorConditions);
-//            }
-//
-//            // TODO: not thread safe
-//            // only add the flag when checking path conditions
-//            // because some of the axioms can be very costly
-//            String old_prelude = lhs.globalContext().constraintOps.z3.SMT_PRELUDE;
-//            lhs.globalContext().constraintOps.z3.SMT_PRELUDE += "(assert (isCheckingPathCondition 0))\n";
-//            boolean subsumed = lhs.orientSubstitution(pathCondition1.variableSet()).dumbImplies(rhs);
-//            lhs.globalContext().constraintOps.z3.SMT_PRELUDE = old_prelude;
-
-            // instead of checking path condition => lhs \/ error1 \/ error2 ...
-            // check if for every one of the rest of the non-error states, sigma,
-            // constraints /\ sigma is unsatisfiable
-            if (!isErrorTerm(ct1.currSyncNode)) {
-                for (SyncNode node : allSyncNodes1) {
-                    if (node == ct1 || isErrorTerm(node.currSyncNode)) {
-                        continue;
-                    }
-
-                    // some other unmatched state
-                    assert node.startSyncPoint == ct1.startSyncPoint;
-
-                    debug("    checking if x86 has shared model");
-                    trace("    with node: " + node.currSyncNode.toString());
-
-                    ConjunctiveFormula pc1 = ConjunctiveFormula.of(node.constraint);
-                    ConjunctiveFormula pc2 = ConjunctiveFormula.of(ct2.constraint);
-                    ConjunctiveFormula pc0 = ConjunctiveFormula.of(startEnsures.get(node.startSyncPoint));
-                    ConjunctiveFormula notSubsumed = pc1.add(pc2).add(pc0).simplify();
-
-                    if (!notSubsumed.isFalse() && !notSubsumed.checkUnsatWithTimeout(
-                            new FormulaContext(FormulaContext.Kind.EquivConstr, null, notSubsumed.globalContext()),
-                            notSubsumed.globalContext().constraintOps.smtOptions.z3ImplTimeout)) {
-                        long elapsed = System.currentTimeMillis() - begin;
-                        // cannot prove no shared model, abort to ensure soundness
-                        debug("    !!! NO took " + elapsed + "ms (may have shared models with other sync node(s))");
-                        return false;
-                    }
-                }
-            }
-
             long elapsed = System.currentTimeMillis() - begin;
 
             ct1.mark = Mark.BLACK;
@@ -544,48 +468,62 @@ public class EquivChecker {
             debug("########################## matching nodes rewritten from sync node " + i +
                     " with (" + syncNodes1.get(i).size() + ", " + syncNodes2.get(i).size() + ")");
 
-            // List<SyncNode> leftErrorStates = new ArrayList<SyncNode>();
-            // List<SyncNode> rightErrorStates = new ArrayList<SyncNode>();
+            // vx86 major
+            for (SyncNode ct2 : syncNodes2.get(i)) {
+                // sync nodes from llvm that are not matched
+                Set<SyncNode> notMatched = new HashSet<>();
 
-            // need to check two things:
-            // 1. evrey error state in x86 should be subsumed by an error state in llvm
-            //    (in general it can be multiple error states, but most cases use only one)
-            // 2. llvm can have extra error states left
-            // 3. every non-error state in x86 should be subsumed by the disjunction of one non-error
-            //    state in llvm and one error state (again, in general it can be disjunction of all the error states)
+                for (SyncNode ct1 : syncNodes1.get(i)) {
+                    if (!isErrorTerm(ct1.currSyncNode)) {
+                        notMatched.add(ct1);
+                    }
+                }
 
-            // TODO fix this hacky thing
-//            if (syncNodes1.get(i).size() == 0) continue;
-//            GlobalContext global = ((SyncNode)syncNodes1.get(i).toArray()[0]).currSyncNode.termContext().global();
-//
-//            List<ConjunctiveFormula> errorConditions = new ArrayList<>();
-//
-//            for (SyncNode ct : syncNodes1.get(i)) {
-//                if (isErrorTerm(ct.currSyncNode)) {
-//                    leftErrorStates.add(ct);
-//                    // TODO is this correct?
-//                    // negatedErrorConditions = negatedErrorConditions.add(new Equality(getPathCondition(ct), BoolToken.FALSE, global));
-//                    errorConditions.add(getPathCondition(ct));
-//                }
-//            }
-//
-//            for (SyncNode ct : syncNodes2.get(i)) {
-//                if (isErrorTerm(ct.currSyncNode)) {
-//                    rightErrorStates.add(ct);
-//                }
-//            }
-
-            for (SyncNode ct1 : syncNodes1.get(i)) {
-                for (SyncNode ct2 : syncNodes2.get(i)) {
+                for (SyncNode ct1 : syncNodes1.get(i)) {
                     assert ct1.startSyncPoint == ct2.startSyncPoint;
                     if (ct1.matchedSyncPoint != ct2.matchedSyncPoint) continue;
                     if (ct1.mark == Mark.BLACK && ct2.mark == Mark.BLACK) continue;
                     if (isErrorTerm(ct1.currSyncNode) != isErrorTerm(ct2.currSyncNode)) continue;
 
-                    matchSyncNode(
-                            ct2.matchedSyncPoint, ct1, ct2, startEnsures, targetEnsures,
-                            syncNodes1.get(i), syncNodes2.get(i)
-                            );
+                    boolean matched = matchSyncNode(
+                        ct2.matchedSyncPoint, ct1, ct2, startEnsures, targetEnsures,
+                        syncNodes1.get(i), syncNodes2.get(i)
+                    );
+
+                    if (matched) {
+                        notMatched.remove(ct1);
+                    }
+                }
+
+                // check for shared models
+                // instead of checking path condition => lhs \/ error1 \/ error2 ...
+                // check if for every one of the rest of the non-error states, sigma,
+                // constraints /\ sigma is unsatisfiable
+                if (!isErrorTerm(ct2.currSyncNode)) {
+                    for (SyncNode ct1 : notMatched) {
+                        // some other unmatched state
+                        debug("    checking if the x86 node " + System.identityHashCode(ct2) +
+                                " has shared model with node " + System.identityHashCode(ct1));
+                        trace("    term: " + ct1.currSyncNode.toString());
+
+                        ConjunctiveFormula pc1 = ConjunctiveFormula.of(ct1.constraint);
+                        ConjunctiveFormula pc2 = ConjunctiveFormula.of(ct2.constraint);
+                        ConjunctiveFormula pc0 = ConjunctiveFormula.of(startEnsures.get(ct1.startSyncPoint));
+                        ConjunctiveFormula notSubsumed = pc1.add(pc2).add(pc0).simplify();
+                        long begin = System.currentTimeMillis();
+
+                        if (!notSubsumed.isFalse() && !notSubsumed.checkUnsatWithTimeout(
+                                new FormulaContext(FormulaContext.Kind.EquivConstr, null, notSubsumed.globalContext()),
+                                notSubsumed.globalContext().constraintOps.smtOptions.z3ImplTimeout)) {
+                            long elapsed = System.currentTimeMillis() - begin;
+                            // cannot prove no shared model, abort to ensure soundness
+                            debug("    !!! unable to prove, took " + elapsed + "ms");
+                            ct2.mark = Mark.RED;
+                        } else {
+                            long elapsed = System.currentTimeMillis() - begin;
+                            debug("    +++ no shared model, took " + elapsed + "ms");
+                        }
+                    }
                 }
             }
         }
