@@ -115,7 +115,7 @@ public class EquivChecker {
         assert targetSyncNodes2.size() == targetEnsures.size();
         assert KEqFrontEnd.globalKEqOptions.parallel >= 1;
 
-        // do a full gc here
+        // do a full gc before starting the symbolic rewriting
         Runtime.getRuntime().gc();
 
         int numSyncPoints = targetEnsures.size();
@@ -188,22 +188,16 @@ public class EquivChecker {
 
                 t1.start(); t2.start();
 
-                while (true) {
-                    try {
-                        t1.join();
-                        break;
-                    } catch (InterruptedException e) {
-                        debug("t1 interrupted " + e.toString());
-                    }
+                try {
+                    t1.join();
+                } catch (InterruptedException e) {
+                    debug("t1 interrupted " + e.toString());
                 }
 
-                while (true) {
-                    try {
-                        t2.join();
-                        break;
-                    } catch (InterruptedException e) {
-                        debug("t2 interrupted " + e.toString());
-                    }
+                try {
+                    t2.join();
+                } catch (InterruptedException e) {
+                    debug("t2 interrupted " + e.toString());
                 }
             } else {
                 f1.run();
@@ -399,7 +393,7 @@ public class EquivChecker {
             Set<SyncNode> allSyncNodes1,
             Set<SyncNode> allSyncNodes2
             ) {
-        debug("matching nodes " + System.identityHashCode(ct1) + " and " + System.identityHashCode(ct2));
+        debug(">>> matching terms " + System.identityHashCode(ct1) + " and " + System.identityHashCode(ct2));
         trace("    - [llvm] " + ct1.currSyncNode.toString());
         trace("             constraint: " + ct1.constraint.toString());
         trace("    - [vx86] " + ct2.currSyncNode.toString());
@@ -414,42 +408,33 @@ public class EquivChecker {
         ConjunctiveFormula e = ConjunctiveFormula.of(targetEnsures.get(i));
         ConjunctiveFormula c = c1.add(c2).add(c0).simplify(); // TODO: termContext ??
 
-        Boolean check1;
-        Boolean check2 = null;
-        Boolean check3 = null;
-
         long begin = System.currentTimeMillis();
 
         // a preliminary check to see if the concrete states of these
-        // symbolic states are bisimular (given that we don't lose any models
+        // symbolic states are bisimilar (given that we don't lose any models
         // during the conjunction of constraints)
-        boolean prelimBisimular =
-                !(check1 = c.isFalse()) &&
+        boolean bisimilar =
+                !c.isFalse() &&
                 // use the same timeout as implication to avoid incorrect matches
-                !(check2 = c.checkUnsatWithTimeout(
-                        new FormulaContext(FormulaContext.Kind.EquivConstr, null, c.globalContext()), c.globalContext().constraintOps.smtOptions.z3ImplTimeout
-                )) &&
-                (check3 = c.smartImplies(e));
+                !c.checkUnsatWithTimeout(
+                    new FormulaContext(
+                        FormulaContext.Kind.EquivConstr,
+                        null,
+                        c.globalContext()
+                    ),
+                    c.globalContext().constraintOps.smtOptions.z3ImplTimeout
+                ) &&
+                c.smartImplies(e);
 
-        if (prelimBisimular) {
-            long elapsed = System.currentTimeMillis() - begin;
+        long elapsed = System.currentTimeMillis() - begin;
 
+        if (bisimilar) {
             ct1.mark = Mark.BLACK;
             ct2.mark = Mark.BLACK;
-
             debug("    !!! YES took " + elapsed + "ms");
-
             return true;
         } else {
-            long elapsed = System.currentTimeMillis() - begin;
-
             debug("    !!! NO took " + elapsed + "ms");
-            smt("    c (unsat: " + check1 + ") = " + c.toStringMultiline());
-            smt("    ####################");
-            smt("    e = " + e.toStringMultiline());
-            smt("    ####################");
-            smt("    c in smt (unsat: " + check2 + ") = " + KILtoSMTLib.translateConstraint(c).toString());
-            smt("    ####################");
             return false;
         }
     }
@@ -470,10 +455,11 @@ public class EquivChecker {
             debug("########################## matching nodes rewritten from sync node " + i +
                     " with (" + syncNodes1.get(i).size() + ", " + syncNodes2.get(i).size() + ")");
 
-            boolean has_error_term_in_1 = false;
+            // if any of the resulting term is an error term for the left (llvm) semantics
+            boolean leftHasErrorTerm = false;
 
             for (SyncNode ct1 : syncNodes1.get(i)) {
-                if (isErrorTerm(ct1.currSyncNode)) has_error_term_in_1 = true;
+                if (isErrorTerm(ct1.currSyncNode)) leftHasErrorTerm = true;
             }
 
             // vx86 major
@@ -510,7 +496,7 @@ public class EquivChecker {
                     // error terms are automatically matched unless
                     // there is no llvm error term or
                     // the check below for shared models fails
-                    if (has_error_term_in_1) {
+                    if (leftHasErrorTerm) {
                         ct2.mark = Mark.BLACK;
                     }
                 }
@@ -521,7 +507,7 @@ public class EquivChecker {
                 // constraints /\ sigma is unsatisfiable
 
                 // no error possible in llvm but error happened in x86
-                if (!has_error_term_in_1 && isErrorTerm(ct2.currSyncNode)) {
+                if (!leftHasErrorTerm && isErrorTerm(ct2.currSyncNode)) {
                     ct2.mark = Mark.RED;
                     continue;
                 }
@@ -537,21 +523,25 @@ public class EquivChecker {
                             " has shared model with node " + System.identityHashCode(ct1));
                     trace("    term: " + ct1.currSyncNode.toString());
 
-                    ConjunctiveFormula pc1 = ConjunctiveFormula.of(ct1.constraint);
-                    ConjunctiveFormula pc2 = ConjunctiveFormula.of(ct2.constraint);
-                    ConjunctiveFormula pc0 = ConjunctiveFormula.of(startEnsures.get(ct1.startSyncPoint));
-                    ConjunctiveFormula notSubsumed = pc1.add(pc2).add(pc0).simplify();
-                    long begin = System.currentTimeMillis();
+                    ConjunctiveFormula notSubsumedFormula = ConjunctiveFormula.of(ct1.constraint)
+                            .add(ConjunctiveFormula.of(ct2.constraint))
+                            .add(ConjunctiveFormula.of(startEnsures.get(ct1.startSyncPoint)))
+                            .simplify();
 
-                    if (!notSubsumed.isFalse() && !notSubsumed.checkUnsatWithTimeout(
-                            new FormulaContext(FormulaContext.Kind.EquivConstr, null, notSubsumed.globalContext()),
-                            notSubsumed.globalContext().constraintOps.smtOptions.z3ImplTimeout)) {
-                        long elapsed = System.currentTimeMillis() - begin;
+                    long begin = System.currentTimeMillis();
+                    boolean notSubsumed =
+                            !notSubsumedFormula.isFalse() &&
+                            !notSubsumedFormula.checkUnsatWithTimeout(
+                                new FormulaContext(FormulaContext.Kind.EquivConstr, null, notSubsumedFormula.globalContext()),
+                                notSubsumedFormula.globalContext().constraintOps.smtOptions.z3ImplTimeout
+                            );
+                    long elapsed = System.currentTimeMillis() - begin;
+
+                    if (notSubsumed) {
                         // cannot prove no shared model, abort to ensure soundness
                         debug("    !!! unable to prove, took " + elapsed + "ms");
                         ct2.mark = Mark.RED;
                     } else {
-                        long elapsed = System.currentTimeMillis() - begin;
                         debug("    +++ no shared model, took " + elapsed + "ms");
                     }
                 }
