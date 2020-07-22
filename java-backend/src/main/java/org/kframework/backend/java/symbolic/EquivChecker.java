@@ -239,9 +239,11 @@ public class EquivChecker {
 
             currSyncNodes1.clear();
             currSyncNodes2.clear();
+
             for (int i = 0; i < numSyncPoints; i++) {
                 for (SyncNode node : allSyncNodes1.get(i)) {
-                    if (node.mark == Mark.RED) {
+                    // ignore error terms in llvm
+                    if (node.mark == Mark.RED && !isErrorTerm(node.currSyncNode)) {
                         debug("[llvm] found a remaining state rewritten from sync point " + i);
                         trace(" - constrained term: " + node.currSyncNode.toString());
                         currSyncNodes1.add(node);
@@ -468,6 +470,12 @@ public class EquivChecker {
             debug("########################## matching nodes rewritten from sync node " + i +
                     " with (" + syncNodes1.get(i).size() + ", " + syncNodes2.get(i).size() + ")");
 
+            boolean has_error_term_in_1 = false;
+
+            for (SyncNode ct1 : syncNodes1.get(i)) {
+                if (isErrorTerm(ct1.currSyncNode)) has_error_term_in_1 = true;
+            }
+
             // vx86 major
             for (SyncNode ct2 : syncNodes2.get(i)) {
                 // sync nodes from llvm that are not matched
@@ -479,19 +487,31 @@ public class EquivChecker {
                     }
                 }
 
-                for (SyncNode ct1 : syncNodes1.get(i)) {
-                    assert ct1.startSyncPoint == ct2.startSyncPoint;
-                    if (ct1.matchedSyncPoint != ct2.matchedSyncPoint) continue;
-                    if (ct1.mark == Mark.BLACK && ct2.mark == Mark.BLACK) continue;
-                    if (isErrorTerm(ct1.currSyncNode) != isErrorTerm(ct2.currSyncNode)) continue;
+                // no need to match error terms in x86
+                if (!isErrorTerm(ct2.currSyncNode)) {
+                    for (SyncNode ct1 : syncNodes1.get(i)) {
+                        assert ct1.startSyncPoint == ct2.startSyncPoint;
+                        if (ct1.matchedSyncPoint != ct2.matchedSyncPoint) continue;
+                        if (ct1.mark == Mark.BLACK && ct2.mark == Mark.BLACK) continue;
 
-                    boolean matched = matchSyncNode(
-                        ct2.matchedSyncPoint, ct1, ct2, startEnsures, targetEnsures,
-                        syncNodes1.get(i), syncNodes2.get(i)
-                    );
+                        // ignore error terms in llvm
+                        if (isErrorTerm(ct1.currSyncNode)) continue;
 
-                    if (matched) {
-                        notMatched.remove(ct1);
+                        boolean matched = matchSyncNode(
+                                ct2.matchedSyncPoint, ct1, ct2, startEnsures, targetEnsures,
+                                syncNodes1.get(i), syncNodes2.get(i)
+                        );
+
+                        if (matched) {
+                            notMatched.remove(ct1);
+                        }
+                    }
+                } else {
+                    // error terms are automatically matched unless
+                    // there is no llvm error term or
+                    // the check below for shared models fails
+                    if (has_error_term_in_1) {
+                        ct2.mark = Mark.BLACK;
                     }
                 }
 
@@ -499,30 +519,40 @@ public class EquivChecker {
                 // instead of checking path condition => lhs \/ error1 \/ error2 ...
                 // check if for every one of the rest of the non-error states, sigma,
                 // constraints /\ sigma is unsatisfiable
-                if (!isErrorTerm(ct2.currSyncNode)) {
-                    for (SyncNode ct1 : notMatched) {
-                        // some other unmatched state
-                        debug("    checking if the x86 node " + System.identityHashCode(ct2) +
-                                " has shared model with node " + System.identityHashCode(ct1));
-                        trace("    term: " + ct1.currSyncNode.toString());
 
-                        ConjunctiveFormula pc1 = ConjunctiveFormula.of(ct1.constraint);
-                        ConjunctiveFormula pc2 = ConjunctiveFormula.of(ct2.constraint);
-                        ConjunctiveFormula pc0 = ConjunctiveFormula.of(startEnsures.get(ct1.startSyncPoint));
-                        ConjunctiveFormula notSubsumed = pc1.add(pc2).add(pc0).simplify();
-                        long begin = System.currentTimeMillis();
+                // no error possible in llvm but error happened in x86
+                if (!has_error_term_in_1 && isErrorTerm(ct2.currSyncNode)) {
+                    ct2.mark = Mark.RED;
+                    continue;
+                }
 
-                        if (!notSubsumed.isFalse() && !notSubsumed.checkUnsatWithTimeout(
-                                new FormulaContext(FormulaContext.Kind.EquivConstr, null, notSubsumed.globalContext()),
-                                notSubsumed.globalContext().constraintOps.smtOptions.z3ImplTimeout)) {
-                            long elapsed = System.currentTimeMillis() - begin;
-                            // cannot prove no shared model, abort to ensure soundness
-                            debug("    !!! unable to prove, took " + elapsed + "ms");
-                            ct2.mark = Mark.RED;
-                        } else {
-                            long elapsed = System.currentTimeMillis() - begin;
-                            debug("    +++ no shared model, took " + elapsed + "ms");
-                        }
+                // this should work for both normal and error terms
+                // for normal terms, we check if:
+                //  - the conjunction of the constraints with any other non-matched and non-error terms is unsat
+                // for error terms, we check if:
+                //  - the conjunction of the constraints with any other non-error terms is unsat
+                for (SyncNode ct1 : notMatched) {
+                    // some other unmatched state
+                    debug("    checking if the x86 node " + System.identityHashCode(ct2) +
+                            " has shared model with node " + System.identityHashCode(ct1));
+                    trace("    term: " + ct1.currSyncNode.toString());
+
+                    ConjunctiveFormula pc1 = ConjunctiveFormula.of(ct1.constraint);
+                    ConjunctiveFormula pc2 = ConjunctiveFormula.of(ct2.constraint);
+                    ConjunctiveFormula pc0 = ConjunctiveFormula.of(startEnsures.get(ct1.startSyncPoint));
+                    ConjunctiveFormula notSubsumed = pc1.add(pc2).add(pc0).simplify();
+                    long begin = System.currentTimeMillis();
+
+                    if (!notSubsumed.isFalse() && !notSubsumed.checkUnsatWithTimeout(
+                            new FormulaContext(FormulaContext.Kind.EquivConstr, null, notSubsumed.globalContext()),
+                            notSubsumed.globalContext().constraintOps.smtOptions.z3ImplTimeout)) {
+                        long elapsed = System.currentTimeMillis() - begin;
+                        // cannot prove no shared model, abort to ensure soundness
+                        debug("    !!! unable to prove, took " + elapsed + "ms");
+                        ct2.mark = Mark.RED;
+                    } else {
+                        long elapsed = System.currentTimeMillis() - begin;
+                        debug("    +++ no shared model, took " + elapsed + "ms");
                     }
                 }
             }
