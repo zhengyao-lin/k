@@ -55,6 +55,9 @@ public final class KEqOptions {
     @Parameter(names={"--def-module2", "-m2"}, description="Name of module in second definition to use as definition.")
     public String defModule2;
 
+    @Parameter(names={"--matching-prelude"}, description="Additional prelude used in matching nodes from both sides")
+    public String matchingPrelude;
+
     @Parameter(names={"--show-traces"}, description="Show traces of symbolic rewriting")
     public boolean showTraces;
 

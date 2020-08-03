@@ -13,6 +13,7 @@ import org.kframework.kore.K;
 import org.kframework.kore.KLabel;
 import org.kframework.unparser.ColorSetting;
 import org.kframework.unparser.OutputModes;
+import org.kframework.utils.file.FileUtil;
 import scala.Tuple2;
 
 import java.io.File;
@@ -120,6 +121,11 @@ public class EquivChecker {
 
         int numSyncPoints = targetEnsures.size();
 
+        GlobalContext global = startSyncNodes1.get(0).termContext().global();
+        String matchingPrelude =
+                KEqFrontEnd.globalKEqOptions.matchingPrelude == null
+                        ? "" : global.files.loadFromWorkingDirectory(KEqFrontEnd.globalKEqOptions.matchingPrelude);
+
         /**
          * This is a map from:
          *   initial sync point number => set of sync nodes rewritten from an instance of that sync points
@@ -221,7 +227,12 @@ public class EquivChecker {
             allSyncNodes1 = mergeListOfSets(allSyncNodes1, syncNodes1.get());
             allSyncNodes2 = mergeListOfSets(allSyncNodes2, syncNodes2.get());
 
+            // TODO: H A C K Y !!!
+            String old_prelude = global.constraintOps.z3.SMT_PRELUDE;
+            global.constraintOps.z3.SMT_PRELUDE += matchingPrelude + "\n";
             matchSyncNodes(allSyncNodes1, allSyncNodes2, startEnsures, targetEnsures);
+            global.constraintOps.z3.SMT_PRELUDE = old_prelude;
+
             // validateSyncNodes(allSyncNodes1);
             // validateSyncNodes(allSyncNodes2);
 
@@ -497,7 +508,11 @@ public class EquivChecker {
                     // there is no llvm error term or
                     // the check below for shared models fails
                     if (leftHasErrorTerm) {
+                        debug(">>> checking error terms in vx86");
                         ct2.mark = Mark.BLACK;
+                    } else {
+                        debug(">>> no error terms in llvm but found potential errors in vx86");
+                        continue;
                     }
                 }
 
@@ -505,12 +520,6 @@ public class EquivChecker {
                 // instead of checking path condition => lhs \/ error1 \/ error2 ...
                 // check if for every one of the rest of the non-error states, sigma,
                 // constraints /\ sigma is unsatisfiable
-
-                // no error possible in llvm but error happened in x86
-                if (!leftHasErrorTerm && isErrorTerm(ct2.currSyncNode)) {
-                    ct2.mark = Mark.RED;
-                    continue;
-                }
 
                 // this should work for both normal and error terms
                 // for normal terms, we check if:
