@@ -17,11 +17,13 @@ import org.kframework.utils.file.FileUtil;
 import scala.Tuple2;
 
 import java.io.File;
+import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -61,12 +63,25 @@ public class EquivChecker {
             try {
                 if (current_query_dir == null) {
                     File dir = new File(KEqFrontEnd.globalKEqOptions.z3QueryLogDir);
+
+                    // rwxr-xr-x
+                    Set<PosixFilePermission> permissions = new HashSet<>();
+                    permissions.add(PosixFilePermission.OWNER_READ);
+                    permissions.add(PosixFilePermission.OWNER_WRITE);
+                    permissions.add(PosixFilePermission.OWNER_EXECUTE);
+                    permissions.add(PosixFilePermission.GROUP_READ);
+                    permissions.add(PosixFilePermission.GROUP_EXECUTE);
+                    permissions.add(PosixFilePermission.OTHERS_READ);
+                    permissions.add(PosixFilePermission.OTHERS_EXECUTE);
+
                     if (!dir.exists()) {
                         dir.mkdir();
+                        Files.setPosixFilePermissions(dir.toPath(), permissions);
                     }
 
                     Path path = Files.createTempDirectory(Paths.get(dir.getPath()), "z3-query-");
                     current_query_dir = path.toFile();
+                    Files.setPosixFilePermissions(path, permissions);
 
                     System.out.println("storing z3 queries to " + current_query_dir.getAbsolutePath());
                 }
@@ -78,6 +93,16 @@ public class EquivChecker {
                 File log = new File(current_query_dir, "q-" + query_counter + ".smt");
                 log.createNewFile();
 
+                // rw-rw-rw-
+                Set<PosixFilePermission> permissions = new HashSet<>();
+                permissions.add(PosixFilePermission.OWNER_READ);
+                permissions.add(PosixFilePermission.OWNER_WRITE);
+                permissions.add(PosixFilePermission.GROUP_READ);
+                permissions.add(PosixFilePermission.GROUP_WRITE);
+                permissions.add(PosixFilePermission.OTHERS_READ);
+                permissions.add(PosixFilePermission.OTHERS_WRITE);
+                Files.setPosixFilePermissions(log.toPath(), permissions);
+
                 FileWriter writer = new FileWriter(log);
                 writer.write("; " + command + "\n\n");
                 writer.write(prelude + "\n");
@@ -88,6 +113,7 @@ public class EquivChecker {
                 query_counter += 1;
             } catch (IOException exc) {
                 System.err.println(exc.toString());
+                exc.printStackTrace(System.err);
             }
         }
     }
@@ -230,8 +256,14 @@ public class EquivChecker {
             // TODO: H A C K Y !!!
             String old_prelude = global.constraintOps.z3.SMT_PRELUDE;
             global.constraintOps.z3.SMT_PRELUDE += matchingPrelude + "\n";
+            // global.constraintOps.z3.options.z3Par *= KEqFrontEnd.globalKEqOptions.parallel;
+            // ^ increase the number of z3 processes since matching queries are
+            // usually very costly
+
             matchSyncNodes(allSyncNodes1, allSyncNodes2, startEnsures, targetEnsures);
+
             global.constraintOps.z3.SMT_PRELUDE = old_prelude;
+            // global.constraintOps.z3.options.z3Par /= KEqFrontEnd.globalKEqOptions.parallel;
 
             // validateSyncNodes(allSyncNodes1);
             // validateSyncNodes(allSyncNodes2);

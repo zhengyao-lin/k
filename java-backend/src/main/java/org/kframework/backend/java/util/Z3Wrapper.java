@@ -21,6 +21,7 @@ import org.kframework.utils.options.SMTOptions;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import static org.kframework.kore.KORE.*;
 
@@ -32,7 +33,7 @@ public class Z3Wrapper {
     public static final Set<String> Z3_QUERY_RESULTS = ImmutableSet.of("unknown", "sat", "unsat");
 
     public String SMT_PRELUDE, CHECK_SAT;
-    private final SMTOptions options;
+    public final SMTOptions options;
     private final JavaExecutionOptions javaExecutionOptions;
     private final KExceptionManager kem;
     private final FileUtil files;
@@ -89,6 +90,27 @@ public class Z3Wrapper {
         return result;
     }
 
+    private ProcessBuilder getProcessBuilder(int timeout, int seed) {
+        ProcessBuilder pb;
+        if (timeout > 0) {
+            pb = files.getProcessBuilder().command(
+                    OS.current().getNativeExecutable("z3"),
+                    "-in",
+                    "-smt2",
+                    "-t:" + timeout,
+                    "smt.random_seed=" + seed);
+        } else {
+            pb = files.getProcessBuilder().command(
+                    OS.current().getNativeExecutable("z3"),
+                    "-in",
+                    "-smt2",
+                    "smt.random_seed=" + seed);
+        }
+        pb.redirectInput(ProcessBuilder.Redirect.PIPE);
+        pb.redirectOutput(ProcessBuilder.Redirect.PIPE);
+        return pb;
+    }
+
     /**
      * @return true if query result is unsat, false otherwise.
      */
@@ -96,31 +118,42 @@ public class Z3Wrapper {
         String result = "";
         // profiler.startQuery();
         try {
-            ProcessBuilder pb;
-            if (timeout > 0) {
-                pb = files.getProcessBuilder().command(
-                        OS.current().getNativeExecutable("z3"),
-                        "-in",
-                        "-smt2",
-                        "-t:" + timeout);
-            } else {
-                pb = files.getProcessBuilder().command(
-                        OS.current().getNativeExecutable("z3"),
-                        "-in",
-                        "-smt2");
-            }
-            pb.redirectInput(ProcessBuilder.Redirect.PIPE);
-            pb.redirectOutput(ProcessBuilder.Redirect.PIPE);
             // profiler.startRun();
             long begin = System.currentTimeMillis();
-            Process z3Process = pb.start();
-            PrintWriter input = new PrintWriter(z3Process.getOutputStream());
-            input.format("%s%s%s\n", SMT_PRELUDE, query, CHECK_SAT);
-            input.close();
+
+            ProcessBuilder[] builders = new ProcessBuilder[options.z3Par];
+            Process[] procs = new Process[options.z3Par];
+
+            EquivChecker.debug("spawning " + options.z3Par + " process(es) for z3");
+
+            for (int i = 0; i < options.z3Par; i++) {
+                builders[i] = getProcessBuilder(timeout, i);
+                EquivChecker.debug(" > z3 process " + i + ": " + String.join(" ", builders[i].command()));
+                procs[i] = builders[i].start();
+                PrintWriter input = new PrintWriter(procs[i].getOutputStream());
+                input.format("%s%s%s\n", SMT_PRELUDE, query, CHECK_SAT);
+                input.close();
+            }
+
             // When the process dies, that input stream does not go away automatically.
             // https://stackoverflow.com/a/7100172/4182868
-            result = IOUtils.toString(z3Process.getInputStream()).trim();
-            z3Process.destroy();
+
+            ProcessBuilder succeededBuilder;
+
+            outer: while (true) {
+                for (int i = 0; i < options.z3Par; i++) {
+                    if (procs[i].waitFor(10, TimeUnit.MILLISECONDS)) {
+                        EquivChecker.debug(" > process " + i + " ended first");
+                        result = IOUtils.toString(procs[i].getInputStream()).trim();
+                        succeededBuilder = builders[i];
+                        for (int j = 0; j < options.z3Par; j++) {
+                            procs[j].destroy();
+                        }
+                        break outer;
+                    }
+                }
+            }
+
             long elapsed = System.currentTimeMillis() - begin;
             // profiler.endRun(timeout);
 
@@ -129,13 +162,13 @@ public class Z3Wrapper {
             }
 
             EquivChecker.addAccumulatedZ3Time(elapsed);
-            EquivChecker.saveZ3Result(SMT_PRELUDE, query.toString(), result, elapsed, pb);
+            EquivChecker.saveZ3Result(SMT_PRELUDE, query.toString(), result, elapsed, succeededBuilder);
 
             if (timeout > 0 && elapsed > timeout) {
                 EquivChecker.debug("z3 query likely timed out");
                 EquivChecker.trace(query.toString());
             }
-        } catch (IOException e) {
+        } catch (Exception e) {
             throw KEMException.criticalError("Exception while invoking Z3", e);
         } finally {
             // if (javaExecutionOptions.debugZ3 && profiler.isLastRunTimeout()) {

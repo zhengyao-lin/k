@@ -53,4 +53,7 @@ public class SMTOptions implements Serializable {
 
     @Parameter(names="--z3-tactic", description="The solver tactic to use to check satisfiability in Z3.")
     public String z3Tactic;
+
+    @Parameter(names="--z3-par", description="Number of z3 instances to spawn for a single query (and return the result of the first process exiting)")
+    public int z3Par = 1;
 }
