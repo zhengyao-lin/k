@@ -85,11 +85,11 @@ public class KProve {
     public static Tuple2<Definition, Module> getProofDefinition(File proofFile, String defModuleName, String specModuleName, CompiledDefinition compiledDefinition, Backend backend, FileUtil files, KExceptionManager kem, Stopwatch sw) {
         System.out.println("parsing proof file: " + proofFile.getAbsolutePath());
 
-        if (KEqFrontEnd.globalKEqOptions.noParseCache) {
-            System.out.println("disable parser cache");
-        }
+//        if (KEqFrontEnd.globalKEqOptions.noParseCache) {
+//            System.out.println("disable parser cache");
+//        }
 
-        Kompile kompile = new Kompile(compiledDefinition.kompileOptions, files, kem, sw, !KEqFrontEnd.globalKEqOptions.noParseCache);
+        Kompile kompile = new Kompile(compiledDefinition.kompileOptions, files, kem, sw, true);
 
         if (defModuleName == null) {
             defModuleName = compiledDefinition.kompiledDefinition.mainModule().name();

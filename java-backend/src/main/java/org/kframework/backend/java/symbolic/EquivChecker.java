@@ -40,7 +40,7 @@ public class EquivChecker {
     public static void trace(String msg) {
         if (KEqFrontEnd.globalKEqOptions.showTraces) System.out.println(msg);
     }
-    public static void smt(String msg) { if (KEqFrontEnd.globalKEqOptions.showSMT) System.out.println(msg); }
+    public static void smt(String msg) { if (KEqFrontEnd.globalKEqOptions != null && KEqFrontEnd.globalKEqOptions.showSMT) System.out.println(msg); }
     public static void debug(String msg) { System.out.println(msg); }
 
     public static void debug(String header, String msg)  {
@@ -59,7 +59,7 @@ public class EquivChecker {
     static File current_query_dir = null;
 
     public synchronized static void saveZ3Result(String prelude, String query, String result, long time, ProcessBuilder proc) {
-        if (KEqFrontEnd.globalKEqOptions.z3QueryLogDir != null) {
+        if (KEqFrontEnd.globalKEqOptions != null && KEqFrontEnd.globalKEqOptions.z3QueryLogDir != null) {
             try {
                 if (current_query_dir == null) {
                     File dir = new File(KEqFrontEnd.globalKEqOptions.z3QueryLogDir);
@@ -412,7 +412,10 @@ public class EquivChecker {
         try {
             KItem errorItem = (KItem)((BuiltinList)ct.term().getCellContentsByName("<k>").get(0)).get(0);
             String errorContent = ((KItem)errorItem.klist().items().get(0)).klabel().name();
-            boolean isUndefined = errorContent.startsWith("outOfBoundsMemoryAccess") || errorContent.startsWith("invalidMemoryOperation");
+            boolean isUndefined =
+                    errorContent.startsWith("outOfBoundsMemoryAccess") ||
+                    errorContent.startsWith("invalidMemoryOperation") ||
+                    errorContent.startsWith("arithmeticOverflow");
             return errorItem.klabel().name().equals("error") && isUndefined;
         } catch (Exception e) {
             return false;

@@ -109,7 +109,7 @@ public class ConjunctiveFormula extends Term implements CollectionInternalRepres
 
     private final Equality falsifyingEquality;
 
-    private transient final GlobalContext global;
+    public GlobalContext global;
 
     public ConjunctiveFormula(
             Substitution<Variable, Term> substitution,
@@ -890,6 +890,7 @@ public class ConjunctiveFormula extends Term implements CollectionInternalRepres
         }
          */
 
+        constraint.global = global;
         constraint = (ConjunctiveFormula) constraint.substitute(this.substitution());
         return implies(constraint, Collections.emptySet(),
                 new FormulaContext(FormulaContext.Kind.EquivImplication, null, constraint.global));

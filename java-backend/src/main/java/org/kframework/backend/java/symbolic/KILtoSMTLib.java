@@ -46,7 +46,7 @@ public class    KILtoSMTLib extends CopyOnWriteTransformer {
     public static final ImmutableSet<Sort> SMTLIB_BUILTIN_SORTS = ImmutableSet.of(
             Sort.BOOL,
             Sort.INT,
-            Sort.BIT_VECTOR,
+            // Sort.BIT_VECTOR,
             Sort.of(Sorts.Float()),
             Sort.of(Sorts.String()),
             Sort.of(KORE.Sort("IntSet")),
@@ -406,9 +406,10 @@ public class    KILtoSMTLib extends CopyOnWriteTransformer {
 
     private String getParametricSortName(Att att, Sort s) {
         s = renameSort(s);
-        if (s == Sort.BIT_VECTOR) {
-            return "(_ BitVec " + BitVector.getBitwidthOrDie(att) + ")";
-        } else if (s == Sort.FLOAT && !krunOptions.experimental.smt.floatsAsPO) {
+//        if (s == Sort.BIT_VECTOR) {
+//            return "(_ BitVec " + BitVector.getBitwidthOrDie(att) + ")";
+//        } else
+        if (s == Sort.FLOAT && !krunOptions.experimental.smt.floatsAsPO) {
             Pair<Integer, Integer> pair = FloatToken.getExponentAndSignificandOrDie(att);
             return "(_ FP " + pair.getLeft() + " " + pair.getRight() + ")";
         } else {
@@ -566,6 +567,29 @@ public class    KILtoSMTLib extends CopyOnWriteTransformer {
                 case "isNaN":
                     label = "(= #1 float_nan)";
                     break;
+            }
+        }
+
+        if (label.equals("#mi-const")) {
+            // TODO
+            if (kList.size() == 2 && kList.get(0) instanceof IntToken && kList.get(1) instanceof IntToken) {
+                BigInteger width = ((IntToken) kList.get(0)).bigIntegerValue();
+                BigInteger value = ((IntToken) kList.get(1)).bigIntegerValue();
+
+                BigInteger bound = new BigInteger("2").pow(width.intValueExact());
+                BigInteger positive = value.mod(bound);
+
+                String hex = positive.toString(2);
+
+                if (hex.length() > width.intValueExact()) {
+                    hex = hex.substring(hex.length() - width.intValueExact());
+                } else if (hex.length() < width.intValueExact()) {
+                    hex = "0".repeat(width.intValueExact() - hex.length()) + hex;
+                }
+
+                return new SMTLibTerm("#b" + hex);
+            } else {
+                label = "((_ intbv #1) #2)";
             }
         }
 
