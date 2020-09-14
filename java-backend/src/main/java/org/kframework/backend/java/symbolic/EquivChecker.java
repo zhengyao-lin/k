@@ -498,20 +498,33 @@ public class EquivChecker {
         int numSyncPoints = targetEnsures.size();
 
         for (int i = 0; i < numSyncPoints; i++) {
-            debug("########################## matching nodes rewritten from sync node " + i +
-                    " with (" + syncNodes1.get(i).size() + ", " + syncNodes2.get(i).size() + ")");
-
             // if any of the resulting term is an error term for the left (llvm) semantics
             boolean leftHasErrorTerm = false;
+            int numLeftErrorTerm = 0;
+            int numRightErrorTerm = 0;
 
             for (SyncNode ct1 : syncNodes1.get(i)) {
-                if (isErrorTerm(ct1.currSyncNode)) leftHasErrorTerm = true;
+                if (isErrorTerm(ct1.currSyncNode)) {
+                    leftHasErrorTerm = true;
+                    numLeftErrorTerm++;
+                }
             }
+
+            for (SyncNode ct2 : syncNodes2.get(i)) {
+                if (isErrorTerm(ct2.currSyncNode)) {
+                    numRightErrorTerm++;
+                }
+            }
+
+            debug("########################## matching nodes rewritten from sync node " + i +
+                    ": (" + syncNodes1.get(i).size() + " (" + numLeftErrorTerm + " error term(s)), " +
+                            syncNodes2.get(i).size() + " (" + numRightErrorTerm + " error term(s)))");
 
             // vx86 major
             for (SyncNode ct2 : syncNodes2.get(i)) {
                 // sync nodes from llvm that are not matched
                 Set<SyncNode> notMatched = new HashSet<>();
+                boolean ct2HasMatchedTerm = false;
 
                 for (SyncNode ct1 : syncNodes1.get(i)) {
                     if (!isErrorTerm(ct1.currSyncNode)) {
@@ -521,6 +534,9 @@ public class EquivChecker {
 
                 // no need to match error terms in x86
                 if (!isErrorTerm(ct2.currSyncNode)) {
+                    debug(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+                    debug(">>> matching x86 term " + System.identityHashCode(ct2) + " against non-error llvm terms");
+                    debug(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
                     for (SyncNode ct1 : syncNodes1.get(i)) {
                         assert ct1.startSyncPoint == ct2.startSyncPoint;
                         if (ct1.matchedSyncPoint != ct2.matchedSyncPoint) continue;
@@ -536,6 +552,7 @@ public class EquivChecker {
 
                         if (matched) {
                             notMatched.remove(ct1);
+                            ct2HasMatchedTerm = true;
                         }
                     }
                 } else {
@@ -543,7 +560,9 @@ public class EquivChecker {
                     // there is no llvm error term or
                     // the check below for shared models fails
                     if (leftHasErrorTerm) {
-                        debug(">>> checking error terms in vx86");
+                        debug(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+                        debug(">>> checking x86 error node " + System.identityHashCode(ct2));
+                        debug(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
                         ct2.mark = Mark.BLACK;
                     } else {
                         debug(">>> no error terms in llvm but found potential errors in vx86");
@@ -555,6 +574,8 @@ public class EquivChecker {
                 // instead of checking path condition => lhs \/ error1 \/ error2 ...
                 // check if for every one of the rest of the non-error states, sigma,
                 // constraints /\ sigma is unsatisfiable
+
+                boolean disjointFromUnmatchTerms = true;
 
                 // this should work for both normal and error terms
                 // for normal terms, we check if:
@@ -585,9 +606,21 @@ public class EquivChecker {
                         // cannot prove no shared model, abort to ensure soundness
                         debug("    !!! unable to prove, took " + elapsed + "ms");
                         ct2.mark = Mark.RED;
+                        disjointFromUnmatchTerms = false;
                     } else {
                         debug("    +++ no shared model, took " + elapsed + "ms");
                     }
+                }
+
+                if (!isErrorTerm(ct2.currSyncNode) &&
+                        !ct2HasMatchedTerm &&
+                        leftHasErrorTerm &&
+                        disjointFromUnmatchTerms) {
+                    // this implies that the current sync point is
+                    // completely subsumed by one of the error terms
+                    // so we should also allow this case
+                    debug("!!! x86 node " + System.identityHashCode(ct2) + " is completely subsumed by llvm error terms");
+                    ct2.mark = Mark.BLACK;
                 }
             }
         }
