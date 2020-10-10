@@ -124,6 +124,8 @@ public class EquivChecker {
         accumulatedZ3Time += ms;
     }
 
+    private static GlobalContext global;
+
     public static boolean equiv(
             java.util.List<ConstrainedTerm> startSyncNodes1,
             java.util.List<ConstrainedTerm> startSyncNodes2,
@@ -147,7 +149,7 @@ public class EquivChecker {
 
         int numSyncPoints = targetEnsures.size();
 
-        GlobalContext global = startSyncNodes1.get(0).termContext().global();
+        global = startSyncNodes1.get(0).termContext().global();
         String matchingPrelude =
                 KEqFrontEnd.globalKEqOptions.matchingPrelude == null
                         ? "" : global.files.loadFromWorkingDirectory(KEqFrontEnd.globalKEqOptions.matchingPrelude);
@@ -254,15 +256,15 @@ public class EquivChecker {
             allSyncNodes2 = mergeListOfSets(allSyncNodes2, syncNodes2.get());
 
             // TODO: H A C K Y !!!
-            String old_prelude = global.constraintOps.z3.SMT_PRELUDE;
-            global.constraintOps.z3.SMT_PRELUDE += matchingPrelude + "\n";
+            // global.constraintOps.z3.preludeMode = "matching";
+
             // global.constraintOps.z3.options.z3Par *= KEqFrontEnd.globalKEqOptions.parallel;
             // ^ increase the number of z3 processes since matching queries are
             // usually very costly
 
             matchSyncNodes(allSyncNodes1, allSyncNodes2, startEnsures, targetEnsures);
 
-            global.constraintOps.z3.SMT_PRELUDE = old_prelude;
+            // global.constraintOps.z3.preludeMode = "default";
             // global.constraintOps.z3.options.z3Par /= KEqFrontEnd.globalKEqOptions.parallel;
 
             // validateSyncNodes(allSyncNodes1);
@@ -415,6 +417,7 @@ public class EquivChecker {
             boolean isUndefined =
                     errorContent.startsWith("outOfBoundsMemoryAccess") ||
                     errorContent.startsWith("invalidMemoryOperation") ||
+                    errorContent.startsWith("divisionByZero") ||
                     errorContent.startsWith("arithmeticOverflow");
             return errorItem.klabel().name().equals("error") && isUndefined;
         } catch (Exception e) {
@@ -469,8 +472,11 @@ public class EquivChecker {
                         c.globalContext()
                     ),
                     c.globalContext().constraintOps.smtOptions.z3ImplTimeout
-                ) &&
-                c.smartImplies(e);
+                );
+
+        global.constraintOps.z3.preludeMode = "matching";
+        bisimilar = bisimilar && c.smartImplies(e);
+        global.constraintOps.z3.preludeMode = "default";
 
         long elapsed = System.currentTimeMillis() - begin;
 
@@ -594,12 +600,14 @@ public class EquivChecker {
                             .simplify();
 
                     long begin = System.currentTimeMillis();
+                    global.constraintOps.z3.preludeMode = "matching";
                     boolean notSubsumed =
                             !notSubsumedFormula.isFalse() &&
                             !notSubsumedFormula.checkUnsatWithTimeout(
                                 new FormulaContext(FormulaContext.Kind.EquivConstr, null, notSubsumedFormula.globalContext()),
                                 notSubsumedFormula.globalContext().constraintOps.smtOptions.z3ImplTimeout
                             );
+                    global.constraintOps.z3.preludeMode = "default";
                     long elapsed = System.currentTimeMillis() - begin;
 
                     if (notSubsumed) {

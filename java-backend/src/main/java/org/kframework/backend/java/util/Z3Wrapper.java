@@ -2,6 +2,7 @@
 package org.kframework.backend.java.util;
 
 import com.google.common.collect.ImmutableSet;
+import org.apache.commons.collections4.map.HashedMap;
 import org.apache.commons.io.IOUtils;
 import org.kframework.backend.java.kil.GlobalContext;
 import org.kframework.backend.java.symbolic.EquivChecker;
@@ -20,7 +21,7 @@ import org.kframework.utils.options.SMTOptions;
 
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 import static org.kframework.kore.KORE.*;
@@ -32,7 +33,11 @@ public class Z3Wrapper {
 
     public static final Set<String> Z3_QUERY_RESULTS = ImmutableSet.of("unknown", "sat", "unsat");
 
-    public String SMT_PRELUDE, CHECK_SAT;
+    public String CHECK_SAT;
+
+    public Map<String, List<String>> smtPreludeMap;
+    public String preludeMode = "default";
+
     public final SMTOptions options;
     private final JavaExecutionOptions javaExecutionOptions;
     private final KExceptionManager kem;
@@ -57,7 +62,32 @@ public class Z3Wrapper {
                 + "(set-option :auto-config false)\n"
                 + "(set-option :smt.mbqi false)\n";
 
-        SMT_PRELUDE = options.smtPrelude == null ? defaultPrelude : files.loadFromWorkingDirectory(options.smtPrelude);
+        if (options.smtPreludeMap == null) {
+            smtPreludeMap = new HashedMap<String, List<String>>() {{
+                put("default", new ArrayList<String>(Arrays.asList(defaultPrelude)));
+            }};
+        } else {
+            String[] items = options.smtPreludeMap.split(";");
+            smtPreludeMap = new HashedMap<String, List<String>>();
+            for (String item : items) {
+                String[] kv = item.split(":");
+                if (kv.length == 1) {
+                    smtPreludeMap = new HashedMap<String, List<String>>() {{
+                        put("default", new ArrayList<String>(Arrays.asList(defaultPrelude)));
+                    }};
+                    break;
+                } else if (kv.length == 2) {
+                    String[] prelude_paths = kv[1].split(",");
+                    List<String> preludes = new ArrayList<String>();
+                    for (String prelude_path : prelude_paths) {
+                        preludes.add(files.loadFromWorkingDirectory(prelude_path));
+                    }
+                    smtPreludeMap.put(kv[0], preludes);
+                } else {
+                    assert false;
+                }
+            }
+        }
         CHECK_SAT = options.z3Tactic == null ? "(check-sat)" : "(check-sat-using " + options.z3Tactic + ")";
     }
 
@@ -71,6 +101,10 @@ public class Z3Wrapper {
         }
     }
 
+    private String getDefaultPrelude() {
+        return smtPreludeMap.getOrDefault(preludeMode, smtPreludeMap.get("default")).get(0);
+    }
+
     private boolean checkQueryWithLibrary(CharSequence query, int timeout) {
         boolean result = false;
         try (Z3Context context = new Z3Context()) {
@@ -78,11 +112,11 @@ public class Z3Wrapper {
             Z3Params params = new Z3Params(context);
             params.add("timeout", timeout);
             solver.setParams(params);
-            solver._assert(context.parseSmtlib2(SMT_PRELUDE + query));
+            solver._assert(context.parseSmtlib2(getDefaultPrelude() + query));
             result = solver.check() == Z3Status.UNSAT;
         } catch (Z3Exception e) {
             kem.registerCriticalWarning(
-                    "failed to translate smtlib expression:\n" + SMT_PRELUDE + query, e);
+                    "failed to translate smtlib expression:\n" + getDefaultPrelude() + query, e);
         } catch (UnsatisfiedLinkError e) {
             System.err.println(System.getProperty("java.library.path"));
             throw e;
@@ -114,7 +148,7 @@ public class Z3Wrapper {
     /**
      * @return true if query result is unsat, false otherwise.
      */
-    private boolean checkQueryWithExternalProcess(CharSequence query, int timeout, Z3Profiler profiler) {
+    private boolean checkQueryWithExternalProcessAndPrelude(CharSequence query, int timeout, Z3Profiler profiler, String prelude) {
         String result = "";
         // profiler.startQuery();
         try {
@@ -131,7 +165,7 @@ public class Z3Wrapper {
                 EquivChecker.debug(" > z3 process " + i + ": " + String.join(" ", builders[i].command()));
                 procs[i] = builders[i].start();
                 PrintWriter input = new PrintWriter(procs[i].getOutputStream());
-                input.format("%s%s%s\n", SMT_PRELUDE, query, CHECK_SAT);
+                input.format("%s%s%s\n", prelude, query, CHECK_SAT);
                 input.close();
             }
 
@@ -162,7 +196,7 @@ public class Z3Wrapper {
             }
 
             EquivChecker.addAccumulatedZ3Time(elapsed);
-            EquivChecker.saveZ3Result(SMT_PRELUDE, query.toString(), result, elapsed, succeededBuilder);
+            EquivChecker.saveZ3Result(prelude, query.toString(), result, elapsed, succeededBuilder);
 
             if (timeout > 0 && elapsed > timeout) {
                 EquivChecker.debug("z3 query likely timed out");
@@ -185,5 +219,18 @@ public class Z3Wrapper {
         }
         // profiler.queryResult(result);
         return "unsat".equals(result);
+    }
+
+    private boolean checkQueryWithExternalProcess(CharSequence query, int timeout, Z3Profiler profiler) {
+        // TODO: hacky
+        for (String prelude : smtPreludeMap.getOrDefault(preludeMode, smtPreludeMap.get("default"))) {
+            // TODO: we are assuming the sequence of preludes we have: T1, T2, ...
+            // are such that T1 is contained in T2, T2 is contained in T3 etc.
+            // so that if a query is unsat in Ti, then it has to be unsat in all of Tj's for j >= i
+            if (checkQueryWithExternalProcessAndPrelude(query, timeout, profiler, prelude)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

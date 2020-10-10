@@ -171,7 +171,16 @@ public class    KILtoSMTLib extends CopyOnWriteTransformer {
             "smt_seq_sorted",
             "smt_seq_filter",
             /* bool2int */
-            "smt_bool2int");
+            "smt_bool2int",
+            /* blacklist out some unsupported bitwise integer operations */
+            /* TODO: this is VERY hacky */
+            "andInt",
+            "shlInt",
+            "shrInt",
+            "xorInt",
+            "orInt",
+            "notInt"
+            );
 
     public static CharSequence translateConstraint(ConjunctiveFormula constraint) {
         KILtoSMTLib kil2SMT = new KILtoSMTLib(true, constraint.globalContext());

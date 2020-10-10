@@ -38,8 +38,9 @@ public class SMTOptions implements Serializable {
     @Parameter(names="--maps-as-int-array", description="Abstracts map values as an array of ints.")
     public boolean mapAsIntArray = false;
 
-    @Parameter(names={"--smt-prelude", "--smt_prelude"}, description="Path to the SMT prelude file.")
-    public String smtPrelude;
+    @Parameter(names={"--smt-prelude-map", "--smt_prelude_map"},
+            description="A map from <mode> to a list of prelude files, each should specify a theory contained in the next. e.g. symexec:<path1>,<path2>;...")
+    public String smtPreludeMap;
 
     @Parameter(names="--z3-jni", description="Invokes Z3 as JNI library. Default is external process. " +
             "JNI is slightly faster, but can potentially lead to JVM crash.")
