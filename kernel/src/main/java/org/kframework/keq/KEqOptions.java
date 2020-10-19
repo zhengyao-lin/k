@@ -76,6 +76,9 @@ public final class KEqOptions {
     @Parameter(names={"--z3-query-log-dir"}, description="Directory to store all z3 queries made and their output")
     public String z3QueryLogDir;
 
+    @Parameter(names={"--bisimulation"}, description="test for strict bisimulation instead of simulation (i.e. no error states)")
+    public boolean bisimultion;
+
 //    @Parameter(names = "--boundary-cells1", description = "The comma-separated list of cells used to mark the boundary " +
 //            "of evaluation. If option is specified, execution ends when these cells in the current term match same " +
 //            "cells in the target term. (Except for step 1, for which boundary checking is disabled.)" +

@@ -411,6 +411,10 @@ public class EquivChecker {
     }
 
     public static boolean isErrorTerm(ConstrainedTerm ct) {
+        if (KEqFrontEnd.globalKEqOptions.bisimultion) {
+            return false;
+        }
+
         try {
             KItem errorItem = (KItem)((BuiltinList)ct.term().getCellContentsByName("<k>").get(0)).get(0);
             String errorContent = ((KItem)errorItem.klist().items().get(0)).klabel().name();
@@ -459,6 +463,8 @@ public class EquivChecker {
 
         long begin = System.currentTimeMillis();
 
+        global.constraintOps.z3.preludeMode = "matching";
+
         // a preliminary check to see if the concrete states of these
         // symbolic states are bisimilar (given that we don't lose any models
         // during the conjunction of constraints)
@@ -474,7 +480,6 @@ public class EquivChecker {
                     c.globalContext().constraintOps.smtOptions.z3ImplTimeout
                 );
 
-        global.constraintOps.z3.preludeMode = "matching";
         bisimilar = bisimilar && c.smartImplies(e);
         global.constraintOps.z3.preludeMode = "default";
 
