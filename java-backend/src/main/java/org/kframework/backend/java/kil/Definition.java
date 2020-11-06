@@ -201,13 +201,14 @@ public class Definition extends JavaSymbolicObject {
      */
     public void addKoreRules(Module module, GlobalContext global) {
         KOREtoBackendKIL converter = new KOREtoBackendKIL(module, this, global, true);
-        addKoreRules(module, converter, null, null);
+        addKoreRules(module, converter, null, null, null);
     }
 
     public List<Rule> addKoreRules(Module module, KOREtoBackendKIL converter, @Nullable String filterAttribute,
-                                   @Nullable UnaryOperator<Rule> rulePostProcessor) {
+                                   @Nullable UnaryOperator<Rule> rulePostProcessor, @Nullable ExpandMacros macroExpander) {
         //Add regular rules from all modules
         List<Rule> result = stream(module.rules())
+                .map(rule -> macroExpander == null ? rule : macroExpander.expand(rule))
                 .filter(rule -> !containsAnyAttribute(rule, automatonAttributes))
                 .filter(rule -> filterAttribute == null || rule.att().contains(filterAttribute))
                 //Ensures that rule order in all collections remains the same across across different executions.

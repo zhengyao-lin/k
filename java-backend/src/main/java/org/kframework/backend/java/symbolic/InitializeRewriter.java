@@ -361,7 +361,9 @@ public class InitializeRewriter implements Function<org.kframework.definition.De
                 converter = new KOREtoBackendKIL(module, definition, rewritingContext, false);
                 termContext = TermContext.builder(rewritingContext).freshCounter(initCounterValue).build();
                 termContext.setKOREtoBackendKILConverter(converter);
-                specRules = definition.addKoreRules(specModule, converter, Att.specification(), this::evaluateRule);
+                // resolve macros defined in the spec module
+                ExpandMacros macroExpander = ExpandMacros.forNonSentences(specModule, files, kompileOptions, false);
+                specRules = definition.addKoreRules(specModule, converter, Att.specification(), this::evaluateRule, macroExpander);
             }
 
             private org.kframework.backend.java.kil.Rule evaluateRule(org.kframework.backend.java.kil.Rule rule) {
