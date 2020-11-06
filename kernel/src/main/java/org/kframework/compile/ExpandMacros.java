@@ -142,7 +142,7 @@ public class ExpandMacros {
         return newLabel;
     }
 
-    private Rule expand(Rule rule) {
+    public Rule expand(Rule rule) {
         resetVars();
         gatherVars(rule.body());
         gatherVars(rule.requires());
