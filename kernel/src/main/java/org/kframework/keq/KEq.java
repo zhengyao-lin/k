@@ -48,7 +48,9 @@ public class KEq {
             Runtime.getRuntime().gc();
             rewriters[0] = gen1.apply(compiled1._1());
             specs[0] = compiled1._2();
+        });
 
+        Thread t2 = new Thread(() -> {
             Tuple2<Definition, Module> compiled2 = KProve.getProofDefinition(files.resolveWorkingDirectory(keqOptions.spec2), keqOptions.defModule2, keqOptions.specModule2, def2, backend, files, kem, sw);
             Runtime.getRuntime().gc();
             rewriters[1] = gen2.apply(compiled2._1());
@@ -57,7 +59,7 @@ public class KEq {
 
         t0.start();
         t1.start();
-        // t2.start();
+        t2.start();
 
         while (true) {
             try {
@@ -75,13 +77,13 @@ public class KEq {
             }
         }
 
-//        while (true) {
-//            try {
-//                t2.join();
-//                break;
-//            } catch (InterruptedException e) {
-//            }
-//        }
+        while (true) {
+            try {
+                t2.join();
+                break;
+            } catch (InterruptedException e) {
+            }
+        }
 
         boolean isEquivalent = rewriters[2].equivalence(rewriters[0], rewriters[1], specs[0], specs[1]);
 

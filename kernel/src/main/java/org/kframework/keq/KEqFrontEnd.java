@@ -33,7 +33,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 
 public class KEqFrontEnd extends FrontEnd {
-    public static KEqOptions globalKEqOptions;
+    public static KEqOptions globalKEqOptions = new KEqOptions();
 
     private final DefinitionScope scope;
     private final Provider<File> kompiledDir;

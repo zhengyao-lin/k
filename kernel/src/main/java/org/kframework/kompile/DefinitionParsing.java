@@ -16,6 +16,7 @@ import org.kframework.definition.DefinitionTransformer;
 import org.kframework.definition.Module;
 import org.kframework.definition.Rule;
 import org.kframework.definition.Sentence;
+import org.kframework.keq.KEqFrontEnd;
 import org.kframework.kore.K;
 import org.kframework.kore.KApply;
 import org.kframework.kore.Sort;
@@ -269,6 +270,11 @@ public class DefinitionParsing {
 
         Module ruleParserModule = gen.getRuleGrammar(module);
 
+        long module_begin = System.currentTimeMillis();
+        if (KEqFrontEnd.globalKEqOptions.showTraces) {
+            System.out.println("resolving bubbles in module " + ruleParserModule.name());
+        }
+
         ParseCache cache = loadCache(ruleParserModule);
         try (ParseInModule parser = RuleGrammarGenerator.getCombinedGrammar(cache.getModule(), isStrict, profileRules, files)) {
             if (stream(module.localSentences()).filter(s -> s instanceof Bubble).findAny().isPresent()) {
@@ -279,12 +285,31 @@ public class DefinitionParsing {
             boolean needNewScanner = !scanner.getModule().importedModuleNames().contains(module.name());
             final Scanner realScanner = needNewScanner ? parser.getScanner() : scanner;
 
-            Set<Sentence> ruleSet = stream(module.localSentences())
-                    .parallel()
+            Stream<Sentence> ruleStream = stream(module.localSentences());
+
+            if (!KEqFrontEnd.globalKEqOptions.disableParallelParsing) {
+                ruleStream = ruleStream.parallel();
+            }
+
+            Set<Sentence> ruleSet = ruleStream
                     .filter(s -> s instanceof Bubble)
                     .map(b -> (Bubble) b)
                     .filter(b -> b.sentenceType().equals("rule"))
-                    .flatMap(b -> performParse(cache.getCache(), parser, realScanner, b))
+                    .flatMap(b -> {
+                        if (KEqFrontEnd.globalKEqOptions.showTraces) {
+                            System.out.println("resolving bubbles in rule " + b.contents().replace("\n", ""));
+                        }
+                        long begin = System.currentTimeMillis();
+                        Stream<? extends K> res = performParse(cache.getCache(), parser, realScanner, b);
+                        long elapsed = System.currentTimeMillis() - begin;
+                        if (KEqFrontEnd.globalKEqOptions.showTraces) {
+                            System.out.println("resolving bubbles took " + elapsed + "ms for the rule " + b.contents().replace("\n", ""));
+                        }
+                        if (KEqFrontEnd.globalKEqOptions.disableParallelParsing) {
+                            Runtime.getRuntime().gc();
+                        }
+                        return res;
+                    })
                     .map(this::upRule)
                 .collect(Collections.toSet());
 
@@ -309,6 +334,8 @@ public class DefinitionParsing {
             if (needNewScanner) {
                 realScanner.close();//required for Windows.
             }
+
+            System.out.println("resolving bubbles in module " + ruleParserModule.name() + " took " + (System.currentTimeMillis() - module_begin) + "ms");
 
             return Module(module.name(), module.imports(),
                     stream((Set<Sentence>) module.localSentences().$bar(ruleSet).$bar(contextSet).$bar(aliasSet)).filter(b -> !(b instanceof Bubble)).collect(Collections.toSet()), module.att());
