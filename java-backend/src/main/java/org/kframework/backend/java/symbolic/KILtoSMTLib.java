@@ -598,7 +598,7 @@ public class    KILtoSMTLib extends CopyOnWriteTransformer {
 
                 return new SMTLibTerm("#b" + hex);
             } else {
-                label = "((_ intbv #1) #2)";
+                label = "((_ int2bv #1) #2)";
             }
         }
 
