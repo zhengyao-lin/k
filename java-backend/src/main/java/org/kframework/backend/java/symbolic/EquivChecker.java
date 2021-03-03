@@ -372,6 +372,7 @@ public class EquivChecker {
                 if (nexts.isEmpty()) {
                     /* final term */
                     debug(name, "!!! no possible rewrites");
+                    debug(name, "stuck on: " + curr.toString());
                     return null; // failed // TODO: output more information for failure
                 }
 
